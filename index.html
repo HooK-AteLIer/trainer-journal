@@ -83,6 +83,33 @@ svg{width:100%;height:auto;display:block}
 summary{cursor:pointer;font-weight:800}.pl{display:grid;grid-template-columns:1fr 100px;gap:8px;align-items:center;margin-top:8px}
 .pass .row input[type=date]{width:auto}
 .pri,.tabs button.on,.av{color:#fff!important}
+
+/* Keep forms within the viewport, including Safari date inputs. */
+.fg>*{min-width:0}.row>*{min-width:0}h2{overflow-wrap:anywhere}
+.client-head{align-items:flex-start}.client-title{flex:1;flex-wrap:nowrap;min-width:0}
+.client-title h2{min-width:0}.client-tabs{max-width:100%}
+input[type=date]{min-width:0;max-width:100%;min-height:44px}
+input[type=date]::-webkit-date-and-time-value{text-align:left;min-height:1.5em}
+.nutrition-intro{margin:0 0 16px;color:var(--mu)}
+@media(max-width:720px){
+ #app{min-height:100dvh}aside{min-height:100dvh}
+ main{padding:16px max(14px,env(safe-area-inset-right)) 24px max(14px,env(safe-area-inset-left));max-width:100%}
+ h2{font-size:23px}.client-head{gap:12px}.client-head>button{margin-left:auto}
+ input,select,textarea{font-size:16px}button{min-height:44px}
+ .fg{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .fg>[style*="span 2"]{grid-column:1/-1!important}
+ .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .card{min-width:0}.card b{font-size:23px;overflow-wrap:anywhere}
+ .client-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:4px}
+ .client-tabs button{padding:10px 6px;font-size:14px}.client-tabs button:last-child{grid-column:1/-1}
+ .pass>.row:first-child{flex-wrap:wrap!important}.pass>.row:first-child>div:first-child{flex:1 1 180px;overflow-wrap:anywhere}
+ .pass .row input[type=date]{flex:1 1 100%;width:100%!important}
+ .pass .row button{flex:1 1 auto;padding:10px}
+ .pl{grid-template-columns:minmax(0,1fr) 90px}
+ .ph{grid-template-columns:repeat(2,minmax(0,1fr))}.ph figure{min-width:0}
+ .ph figcaption{flex-wrap:wrap}.cmp{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:360px){.fg{grid-template-columns:minmax(0,1fr)}.grid{grid-template-columns:minmax(0,1fr)}}
 </style>
 </head>
 <body>
@@ -150,13 +177,18 @@ function tabW(c){
   return `<div class="form"><div class="fg"><div><label>Дата</label><input type="date" id="w_d" value="${today()}"></div><div style="grid-column:span 2"><label>Название</label><input id="w_t" placeholder="Например: Ноги + ягодицы"></div></div><label class="mu" style="font-size:12px">Упражнения (подходы × повторы × вес)</label><textarea id="w_x" placeholder="Присед 4×10×60&#10;Румынская тяга 3×12×50"></textarea><div style="margin-top:10px"><button class="pri" data-a="addw">Добавить тренировку</button></div></div>`+
   `<h3>История тренировок (${ws.length})</h3>`+(ws.map(w=>`<div class="wk"><div class="row" style="justify-content:space-between"><b>${esc(w.t||'Тренировка')} <small>· ${fmt(w.d)}</small></b><button class="dg" data-a="delw" data-id="${w.id}">✕</button></div><pre>${esc(w.x)}</pre></div>`).join('')||'<p class="mu">Тренировок пока нет.</p>');
 }
+function tabN(c){
+ const n=c.nutrition||{};
+ const fields=[['calories','Калории, ккал'],['protein','Белки, г'],['fat','Жиры, г'],['carbs','Углеводы, г']];
+ return '<div class="form"><h3 style="margin-top:0">КБЖУ на день</h3><p class="nutrition-intro">Индивидуальные цели питания. Введите назначенные значения — они сохраняются в карточке клиента.</p><div class="fg">'+fields.map(([key,label])=>`<div><label for="nutrition_${key}">${label}</label><input id="nutrition_${key}" type="number" min="0" step="0.1" inputmode="decimal" value="${esc(n[key]??'')}" placeholder="Не указано"></div>`).join('')+`</div><label for="nutrition_notes">Заметки по питанию</label><textarea id="nutrition_notes" placeholder="Режим питания, рекомендации…">${esc(n.notes||'')}</textarea><small>Сохраняется автоматически на этом устройстве.</small></div>`;
+}
 function detail(c){
-  const T={a:'Абонементы',m:'Замеры',p:'Фото',w:'Тренировки'};
-  return `<button class="back" data-a="back">← Клиенты</button><div class="row" style="justify-content:space-between"><div class="row" style="gap:14px"><i class="av big">${esc(c.name.trim().charAt(0).toUpperCase())}</i><h2>${esc(c.name)}</h2></div><button class="${delc?'dg':''}" data-a="delc">${delc?'Точно удалить?':'Удалить клиента'}</button></div>`+
-  `<div class="fg" style="margin-top:10px"><div style="grid-column:span 2"><label class="mu">Цель</label><input id="c_g" value="${esc(c.g)}" placeholder="Похудение, набор массы…"></div><div><label class="mu">Рост, см</label><input id="c_h" type="number" value="${esc(c.h)}"></div><div><label class="mu">Телефон</label><input id="c_p" type="tel" value="${esc(c.ph)}"></div></div>`+
+  const T={a:'Абонементы',m:'Замеры',p:'Фото',w:'Тренировки',n:'КБЖУ'};
+  return `<button class="back" data-a="back">← Клиенты</button><div class="row client-head" style="justify-content:space-between"><div class="row client-title" style="gap:14px"><i class="av big">${esc(c.name.trim().charAt(0).toUpperCase())}</i><h2>${esc(c.name)}</h2></div><button class="${delc?'dg':''}" data-a="delc">${delc?'Точно удалить?':'Удалить клиента'}</button></div>`+
+  `<div class="fg" style="margin-top:10px"><div style="grid-column:span 2"><label class="mu">Цель</label><input id="c_g" value="${esc(c.g)}" placeholder="Похудение, набор массы…"></div><div><label class="mu" for="c_age">Возраст, лет</label><input id="c_age" type="number" min="0" max="120" step="1" inputmode="numeric" value="${esc(c.age??'')}" placeholder="Не указан"></div><div><label class="mu" for="c_h">Рост, см</label><input id="c_h" type="number" min="0" max="300" step="0.1" inputmode="decimal" value="${esc(c.h)}" placeholder="Не указан"></div><div><label class="mu">Телефон</label><input id="c_p" type="tel" value="${esc(c.ph)}"></div></div>`+
   `<textarea id="c_n" placeholder="Заметки: травмы, ограничения, питание…">${esc(c.n)}</textarea>`+
-  `<div class="tabs">${Object.entries(T).map(([k,l])=>`<button class="${tab===k?'on':''}" data-a="tab" data-id="${k}">${l}</button>`).join('')}</div>`+
-  (tab==='a'?tabA(c):tab==='m'?tabM(c):tab==='p'?tabP(c):tabW(c));
+  `<div class="tabs client-tabs" role="group" aria-label="Разделы клиента">${Object.entries(T).map(([k,l])=>`<button class="${tab===k?'on':''}" data-a="tab" data-id="${k}">${l}</button>`).join('')}</div>`+
+  (tab==='a'?tabA(c):tab==='m'?tabM(c):tab==='p'?tabP(c):tab==='n'?tabN(c):tabW(c));
 }
 function render(){
   $('#app').classList.toggle('sel',view==='s'||!!(sel&&clients[sel]));
@@ -230,7 +262,8 @@ document.addEventListener('change',async e=>{
   else if(i==='cnote'){cfg.note=e.target.value;await saveCfg()}
   else if(e.target.dataset.pl!==undefined){cfg.pl[+e.target.dataset.pl].c=+e.target.value;await saveCfg()}
   else if(i==='np_pr'){const x=cfg.pl[+e.target.value];if(e.target.value!==''&&x){$('#np_pk').value=x.pk;$('#np_c').value=x.c}}
-  else if(c&&(i==='c_g'||i==='c_h'||i==='c_n'||i==='c_p')){c[{c_g:'g',c_h:'h',c_n:'n',c_p:'ph'}[i]]=e.target.value;clients[c.id]=c;if(col)try{await col.doc(c.id).set(c)}catch(_){toast('Не удалось сохранить')}}
+  else if(c&&i.startsWith('nutrition_')){const key=i.slice(10);if(!['calories','protein','fat','carbs','notes'].includes(key))return;if(key!=='notes'&&!e.target.validity.valid)return toast('Введите число не меньше нуля');c.nutrition={...(c.nutrition||{}),[key]:e.target.value};if(col)await col.doc(c.id).set(c);toast('КБЖУ сохранено')}
+  else if(c&&(i==='c_g'||i==='c_h'||i==='c_age'||i==='c_n'||i==='c_p')){if(!e.target.validity.valid)return toast('Проверьте значение');c[{c_g:'g',c_h:'h',c_age:'age',c_n:'n',c_p:'ph'}[i]]=e.target.value;clients[c.id]=c;if(col)try{await col.doc(c.id).set(c)}catch(_){toast('Не удалось сохранить')}}
 });
 $('#q').addEventListener('input',e=>{q=e.target.value;render()});
 /* ---------- Локальное хранилище: localStorage (данные) + IndexedDB (фото) ---------- */
