@@ -110,6 +110,9 @@ input[type=date]::-webkit-date-and-time-value{text-align:left;min-height:1.5em}
  .ph figcaption{flex-wrap:wrap}.cmp{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media(max-width:360px){.fg{grid-template-columns:minmax(0,1fr)}.grid{grid-template-columns:minmax(0,1fr)}}
+
+.nutrition-section{margin-top:20px}.calc-wide{grid-column:1/-1}.calc-checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}.calc-checks label{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--bd);padding:10px;border-radius:12px;color:var(--tx);font-size:14px}.calc-checks input{width:20px;height:20px;flex:none;margin-top:1px}.calc-result{margin-top:16px}.calc-result .warn{display:block;margin:8px 0}.calc-result ul{padding-left:20px}.calc-help{font-size:13px;color:var(--mu);margin:8px 0 14px}.calc-inputs label{margin-bottom:4px}.calc-actions{margin-top:12px}.calc-result .grid{margin:14px 0}.nutrition-history{padding:12px 0;border-bottom:1px solid var(--bd)}.nutrition-history summary{font-size:14px;overflow-wrap:anywhere}.nutrition-history p{overflow-wrap:anywhere}.nutrition-section a{color:var(--ac)}.nutrition-section select{max-width:100%}.calc-section-title{font-size:18px;margin:0 0 10px}.calc-checks fieldset{min-width:0}
+@media(max-width:400px){.calc-checks{grid-template-columns:minmax(0,1fr)}.calc-actions button{width:100%}}
 </style>
 </head>
 <body>
@@ -177,11 +180,110 @@ function tabW(c){
   return `<div class="form"><div class="fg"><div><label>Дата</label><input type="date" id="w_d" value="${today()}"></div><div style="grid-column:span 2"><label>Название</label><input id="w_t" placeholder="Например: Ноги + ягодицы"></div></div><label class="mu" style="font-size:12px">Упражнения (подходы × повторы × вес)</label><textarea id="w_x" placeholder="Присед 4×10×60&#10;Румынская тяга 3×12×50"></textarea><div style="margin-top:10px"><button class="pri" data-a="addw">Добавить тренировку</button></div></div>`+
   `<h3>История тренировок (${ws.length})</h3>`+(ws.map(w=>`<div class="wk"><div class="row" style="justify-content:space-between"><b>${esc(w.t||'Тренировка')} <small>· ${fmt(w.d)}</small></b><button class="dg" data-a="delw" data-id="${w.id}">✕</button></div><pre>${esc(w.x)}</pre></div>`).join('')||'<p class="mu">Тренировок пока нет.</p>');
 }
-function tabN(c){
- const n=c.nutrition||{};
- const fields=[['calories','Калории, ккал'],['protein','Белки, г'],['fat','Жиры, г'],['carbs','Углеводы, г']];
- return '<div class="form"><h3 style="margin-top:0">КБЖУ на день</h3><p class="nutrition-intro">Индивидуальные цели питания. Введите назначенные значения — они сохраняются в карточке клиента.</p><div class="fg">'+fields.map(([key,label])=>`<div><label for="nutrition_${key}">${label}</label><input id="nutrition_${key}" type="number" min="0" step="0.1" inputmode="decimal" value="${esc(n[key]??'')}" placeholder="Не указано"></div>`).join('')+`</div><label for="nutrition_notes">Заметки по питанию</label><textarea id="nutrition_notes" placeholder="Режим питания, рекомендации…">${esc(n.notes||'')}</textarea><small>Сохраняется автоматически на этом устройстве.</small></div>`;
+const NC_ACTIVITY=[
+ ['1.4','Низкая','Сидячая работа, мало ходьбы и тренировок'],
+ ['1.6','Умеренная','Сидячая работа и регулярные прогулки / тренировки'],
+ ['1.8','Высокая','Подвижная работа и регулярная физическая нагрузка'],
+ ['2.0','Очень высокая','Тяжёлая работа или большой объём тренировок']
+];
+const NC_HEALTH={pregnancy:'Беременность / грудное вскармливание',diabetes:'Диабет / эпизоды гипогликемии',kidney:'Заболевания почек',liver:'Заболевания печени',thyroid:'Заболевания щитовидной железы',heart:'Сердечно-сосудистые заболевания',digestive:'Заболевания ЖКТ / нарушение усвоения',eating:'РПП / выраженные ограничения питания',other:'Другие заболевания или восстановление после операции'};
+const nutritionDrafts={},nutritionResults={};
+function nutritionInitial(c){
+ const p=c.nutritionProfile||{},ms=sorted(c).filter(x=>x.weight!==''&&x.weight!=null),last=ms[ms.length-1];
+ return {age:c.age??'',height:c.h??'',weight:last?last.weight:'',sex:'',activity:'',goal:'maintain',proteinPct:'20',fatPct:'30',job:'',lifestyle:'',healthStatus:'',medicationStatus:'',conditions:[],healthNotes:'',medications:'',allergies:'',...p};
 }
+function readNutritionForm(){
+ const keys=['age','height','weight','sex','activity','goal','proteinPct','fatPct','job','lifestyle','healthStatus','medicationStatus','healthNotes','medications','allergies'];
+ const p={};keys.forEach(k=>p[k]=val('nc_'+k).trim());p.conditions=Object.keys(NC_HEALTH).filter(k=>$('#nc_condition_'+k)?.checked);return p;
+}
+// Pure estimate: clinical flags gate the calculation; never apply medication/disease multipliers.
+function estimateNutrition(p){
+ const errors=[],clinical=[];const number=k=>p[k]!==''&&p[k]!=null&&Number.isFinite(Number(p[k]))?Number(p[k]):NaN;
+ const age=number('age'),height=number('height'),weight=number('weight'),activity=number('activity'),proteinPct=number('proteinPct'),fatPct=number('fatPct'),carbsPct=100-proteinPct-fatPct;
+ if(!Number.isInteger(age)||age<1||age>120)errors.push('Укажите возраст целым числом от 1 до 120 лет.');
+ if(!(height>=100&&height<=250))errors.push('Укажите рост от 100 до 250 см.');
+ if(!(weight>=25&&weight<=350))errors.push('Укажите текущий вес от 25 до 350 кг.');
+ if(!['female','male'].includes(p.sex))errors.push('Выберите вариант формулы по полу.');
+ if(!NC_ACTIVITY.some(a=>Number(a[0])===activity))errors.push('Выберите суммарную активность с учётом работы и тренировок.');
+ if(!['lose','maintain','gain'].includes(p.goal))errors.push('Выберите цель.');
+ if(!(proteinPct>=10&&proteinPct<=35&&fatPct>=20&&fatPct<=35&&carbsPct>=45&&carbsPct<=65))errors.push('Распределение: белки 10–35%, жиры 20–35%, углеводы (остаток) 45–65%.');
+ if(!['none','present'].includes(p.healthStatus))clinical.push('Сначала уточните состояние здоровья клиента.');
+ if(!['none','taking'].includes(p.medicationStatus))clinical.push('Сначала уточните приём лекарств.');
+ if(Number.isFinite(age)&&(age<18||age>78))clinical.push('Вне возраста 18–78 лет нужен индивидуальный расчёт специалиста.');
+ if(p.healthStatus==='present'||(p.conditions||[]).length||String(p.healthNotes||'').trim())clinical.push('При заболеваниях и особых состояниях нужны цели, согласованные с врачом или диетологом.');
+ if(p.medicationStatus==='taking'||String(p.medications||'').trim())clinical.push('При приёме лекарств потребность в питании и ограничения нужно сверить с лечащим специалистом.');
+ const bmi=weight/(height/100)**2;
+ if(Number.isFinite(bmi)&&bmi<18.5)clinical.push('При недостаточной массе тела нужен индивидуальный план специалиста.');
+ if(errors.length||clinical.length)return {ok:false,errors,clinical};
+ const resting=10*weight+6.25*height-5*age+(p.sex==='male'?5:-161);
+ const maintenance=resting*activity,factor={lose:.9,maintain:1,gain:1.05}[p.goal],calories=Math.round(maintenance*factor/10)*10;
+ if(calories<1200)return {ok:false,errors:[],clinical:['Оценка ниже 1200 ккал/сутки: автоматическая цель не формируется, нужен специалист. Это ограничение калькулятора, а не универсальная безопасная норма.']};
+ return {ok:true,resting:Math.round(resting),maintenance:Math.round(maintenance),calories,protein:Math.round(calories*proteinPct/100/4),fat:Math.round(calories*fatPct/100/9),carbs:Math.round(calories*carbsPct/100/4),proteinPct,fatPct,carbsPct,activity,goal:p.goal,method:'Mifflin–St Jeor',bmi};
+}
+const ncGoal=g=>({lose:'Снижение веса (−10%)',maintain:'Поддержание веса',gain:'Набор веса (+5%)'}[g]||g);
+function nutritionPreview(c){
+ const entry=nutritionResults[c.id];if(!entry)return '<p class="calc-help">Заполните анкету и нажмите «Рассчитать». Сохранённые цели не изменятся до нажатия «Применить к клиенту».</p>';
+ const r=entry.result;if(!r.ok)return `<div class="warn" role="status"><b>Нужны уточнения</b><ul>${[...r.errors,...r.clinical].map(x=>`<li>${esc(x)}</li>`).join('')}</ul>${r.clinical.length?'<p>Анкету можно сохранить. Согласованные значения внесите в поля «Сохранённые цели» выше. Лекарства и их дозировки здесь не подбираются.</p>':''}</div>`;
+ return `<div role="status"><h3>Ориентир для ${esc(c.name)}</h3><div class="grid">${[['Калории',r.calories,'ккал'],['Белки',r.protein,'г'],['Жиры',r.fat,'г'],['Углеводы',r.carbs,'г']].map(([n,v,u])=>`<div class="card"><small>${n}</small><b>${v} ${u}</b></div>`).join('')}</div><p class="calc-help">Обмен в покое ≈ ${r.resting} ккал · поддержание ≈ ${r.maintenance} ккал · активность ×${r.activity}. ${esc(ncGoal(r.goal))}. Б/Ж/У: ${r.proteinPct}/${r.fatPct}/${r.carbsPct}% энергии.</p><p class="calc-help">Это начальная оценка, а не лечебный рацион. Уточняйте её по динамике веса, самочувствию и нагрузке; округление граммов может немного менять итоговую калорийность.</p><button class="pri" data-a="applyNutrition" data-client="${esc(c.id)}">Применить к клиенту ${esc(c.name)}</button><small style="display:block;margin-top:8px">Заменит текущие цели КБЖУ. Анкета и расчёт сохранятся в истории клиента.</small></div>`;
+}
+function tabN(c){
+ const n=c.nutrition||{},p=nutritionDrafts[c.id]||nutritionInitial(c);
+ const field=(key,label,extra='')=>`<div><label for="nc_${key}">${label}</label><input id="nc_${key}" value="${esc(p[key]??'')}" ${extra}></div>`;
+ const select=(key,label,options)=>`<div><label for="nc_${key}">${label}</label><select id="nc_${key}">${options.map(([v,l])=>`<option value="${v}"${String(p[key])===v?' selected':''}>${esc(l)}</option>`).join('')}</select></div>`;
+ const fields=[['calories','Калории, ккал'],['protein','Белки, г'],['fat','Жиры, г'],['carbs','Углеводы, г']];
+ const stamp=n.updatedAt?new Date(n.updatedAt).toLocaleDateString('ru-RU'):'';
+ const origin=n.needsReview?'Анкета изменена — проверьте сохранённые цели со специалистом или рассчитайте заново':n.origin==='calculator'?'Расчёт применён '+stamp:n.origin==='manual'?'Цели изменены вручную': 'Можно заполнить вручную или применить результат калькулятора';
+ return `<div class="form"><h3 style="margin-top:0">Сохранённые цели · ${esc(c.name)}</h3><p id="nutrition-origin" class="calc-help">${esc(origin)}</p><div class="fg">`+fields.map(([key,label])=>`<div><label for="nutrition_${key}">${label}</label><input id="nutrition_${key}" type="number" min="0" step="0.1" inputmode="decimal" value="${esc(n[key]??'')}" placeholder="Не указано"></div>`).join('')+`</div><label for="nutrition_notes">Заметки по питанию</label><textarea id="nutrition_notes" placeholder="Назначения и рекомендации…">${esc(n.notes||'')}</textarea><small>Сохраняется автоматически на этом устройстве.</small></div>
+ <section class="form nutrition-section"><h3 class="calc-section-title">Калькулятор КБЖУ</h3><p class="calc-help">Анкета клиента ${esc(c.name)}. Возраст и рост берутся из карточки, вес — из последнего замера при первом заполнении. Проверьте их перед расчётом.</p><div class="fg calc-inputs">
+ ${field('age','Возраст, лет','type="number" min="1" max="120" step="1" inputmode="numeric"')}
+ ${field('height','Рост, см','type="number" min="100" max="250" step="0.1" inputmode="decimal"')}
+ ${field('weight','Текущий вес, кг','type="number" min="25" max="350" step="0.1" inputmode="decimal"')}
+ ${select('sex','Вариант формулы',[['','Выберите'],['female','Женская формула'],['male','Мужская формула']])}
+ <div class="calc-wide">${select('activity','Общая активность: работа + образ жизни + тренировки',[['','Выберите уровень'],...NC_ACTIVITY.map(a=>[a[0],a[1]+' · ×'+a[0]])])}<p class="calc-help">${NC_ACTIVITY.map(a=>a[1]+': '+a[2]+'.').join(' ')} Нагрузка учитывается один раз, без отдельной прибавки за тренировки.</p></div>
+ ${select('goal','Цель',[['maintain','Поддержание'],['lose','Плавное снижение (−10%)'],['gain','Плавный набор (+5%)']])}
+ ${field('job','Работа и график','placeholder="Например: офис, ночные смены"')}
+ <div class="calc-wide"><label for="nc_lifestyle">Образ жизни и нагрузка</label><textarea id="nc_lifestyle" placeholder="Ходьба, тренировки, сон, восстановление…">${esc(p.lifestyle)}</textarea><p class="calc-help">График работы и заметки сохраняются в анкете. Численно нагрузку задаёт выбранный выше общий уровень активности.</p></div>
+ ${field('proteinPct','Белки, % калорий','type="number" min="10" max="35" step="1" inputmode="numeric"')}
+ ${field('fatPct','Жиры, % калорий','type="number" min="20" max="35" step="1" inputmode="numeric"')}
+ </div><p class="calc-help">По умолчанию Б/Ж/У = 20/30/50%. Углеводы — оставшиеся калории. Это базовое распределение, не индивидуальное назначение при заболевании.</p>
+ <h3>Здоровье и лекарства</h3><div class="fg calc-inputs">
+ ${select('healthStatus','Ограничения по здоровью',[['','Не уточнено'],['none','Нет известных ограничений'],['present','Есть особенности / заболевания']])}
+ ${select('medicationStatus','Приём медикаментов',[['','Не уточнено'],['none','Не принимает'],['taking','Принимает лекарства']])}</div>
+ <div class="calc-checks">${Object.entries(NC_HEALTH).map(([k,l])=>`<label for="nc_condition_${k}"><input id="nc_condition_${k}" type="checkbox" ${(p.conditions||[]).includes(k)?'checked':''}><span>${esc(l)}</span></label>`).join('')}</div>
+ <div class="fg calc-inputs"><div class="calc-wide"><label for="nc_healthNotes">Особенности здоровья и ограничения врача</label><textarea id="nc_healthNotes" placeholder="Со слов клиента; не ставьте диагноз по анкете">${esc(p.healthNotes)}</textarea></div><div class="calc-wide"><label for="nc_medications">Принимаемые препараты</label><textarea id="nc_medications" placeholder="Название и известные ограничения; не меняйте дозировку по расчёту">${esc(p.medications)}</textarea></div><div class="calc-wide"><label for="nc_allergies">Аллергии, непереносимость и предпочтения</label><textarea id="nc_allergies" placeholder="Для составления меню; автоматически КБЖУ не меняют">${esc(p.allergies)}</textarea></div></div>
+ <p class="calc-help">При заболевании, беременности, грудном вскармливании, приёме лекарств или неуточнённом анамнезе автоматические цели не формируются: используйте значения специалиста. Анкета хранится в браузере вместе с клиентом и включается в экспорт.</p>
+ <div class="row calc-actions"><button class="pri" data-a="calculateNutrition">Рассчитать</button><button data-a="saveNutritionProfile">Сохранить анкету</button></div><div id="nutrition-preview" class="calc-result" aria-live="polite">${nutritionPreview(c)}</div>
+ <details style="margin-top:20px"><summary>Как считается и источники</summary><p class="calc-help">Миффлин — Сан Жеор: 10 × вес + 6,25 × рост − 5 × возраст; +5 для мужской формулы, −161 для женской. Поддержание = обмен в покое × выбранная активность (приближённые уровни PAL). Цель: поддержание, −10% или +5%; это настройки калькулятора, не прогноз темпа изменения веса. Белки и углеводы: 4 ккал/г; жиры: 9 ккал/г. Смена работы и нагрузки требует пересмотра уровня активности.</p><p class="calc-help"><a href="https://pubmed.ncbi.nlm.nih.gov/2305711/" target="_blank" rel="noopener">Исследование формулы</a> · <a href="https://www.niddk.nih.gov/bwp" target="_blank" rel="noopener">NIDDK: оценка активности и ограничения</a> · <a href="https://www.canada.ca/en/health-canada/services/food-nutrition/healthy-eating/dietary-reference-intakes/tables/reference-values-macronutrients.html" target="_blank" rel="noopener">Диапазоны БЖУ</a> · <a href="https://www.cdc.gov/diabetes/healthy-eating/diabetes-and-kidney-disease-food.html" target="_blank" rel="noopener">Диабет, лекарства и болезни почек</a></p></details></section>
+ <section class="nutrition-section"><h3>История расчётов (${(c.nutritionHistory||[]).length})</h3>${(c.nutritionHistory||[]).slice(0,20).map(h=>`<details class="nutrition-history"><summary>${esc(new Date(h.at).toLocaleString('ru-RU'))} · ${esc(h.result.calories)} ккал · Б ${esc(h.result.protein)} / Ж ${esc(h.result.fat)} / У ${esc(h.result.carbs)} г</summary><p class="calc-help">${esc(ncGoal(h.input.goal))}; ${esc(h.input.age)} лет, ${esc(h.input.height)} см, ${esc(h.input.weight)} кг; активность ×${esc(h.input.activity)}. ${esc(h.result.method)}</p><p class="calc-help">Работа: ${esc(h.input.job||'не указана')}. Образ жизни: ${esc(h.input.lifestyle||'не указан')}. Ограничения питания: ${esc(h.input.allergies||'не указаны')}.</p></details>`).join('')||'<p class="mu">Применённые расчёты появятся здесь.</p>'}</section>`;
+}
+async function saveNutritionProfile(c){
+ if(!c)return;const p=readNutritionForm();nutritionDrafts[c.id]=p;c.nutritionProfile=p;
+ if(p.age!==''&&Number.isInteger(+p.age)&&+p.age>=1&&+p.age<=120)c.age=p.age;
+ if(p.height!==''&&+p.height>=100&&+p.height<=250)c.h=p.height;
+ const applied=(c.nutritionHistory||[]).find(x=>x.id===c.nutrition?.calculationId);if(c.nutrition&&(!applied||JSON.stringify(applied.input)!==JSON.stringify(p)))c.nutrition.needsReview=true;await save(c);toast('Анкета сохранена для '+c.name);
+}
+async function runNutrition(c){
+ if(!c)return;const input=readNutritionForm();nutritionDrafts[c.id]=input;nutritionResults[c.id]={input,result:estimateNutrition(input)};
+ $('#nutrition-preview').innerHTML=nutritionPreview(c);
+}
+async function applyNutrition(c){
+ if(!c)return;const entry=nutritionResults[c.id],input=readNutritionForm();
+ if(!entry||JSON.stringify(input)!==JSON.stringify(entry.input)||!estimateNutrition(input).ok)return toast('Данные изменились — рассчитайте заново');
+ const at=new Date().toISOString(),id=nid(),result=entry.result;
+ c.nutrition={...(c.nutrition||{}),calories:result.calories,protein:result.protein,fat:result.fat,carbs:result.carbs,origin:'calculator',needsReview:false,calculationId:id,updatedAt:at};
+ c.nutritionProfile=JSON.parse(JSON.stringify(input));c.age=input.age;c.h=input.height;
+ c.nutritionHistory=[{id,clientId:c.id,at,input:JSON.parse(JSON.stringify(input)),result:{...result}},...(c.nutritionHistory||[])].slice(0,20);
+ delete nutritionResults[c.id];await save(c);toast('Расчёт сохранён: '+c.name);
+}
+document.addEventListener('input',e=>{
+ if(!e.target.id?.startsWith('nc_')||!clients[sel])return;
+ nutritionDrafts[sel]=readNutritionForm();delete nutritionResults[sel];const preview=$('#nutrition-preview');if(preview)preview.innerHTML='<p class="calc-help">Анкета изменена. Нажмите «Рассчитать», чтобы получить новый результат.</p>';
+});
+document.addEventListener('change',e=>{
+ if(!e.target.id?.startsWith('nc_')||!clients[sel])return;
+ nutritionDrafts[sel]=readNutritionForm();delete nutritionResults[sel];const preview=$('#nutrition-preview');if(preview)preview.innerHTML='<p class="calc-help">Анкета изменена. Нажмите «Рассчитать», чтобы получить новый результат.</p>';
+});
+
 function detail(c){
   const T={a:'Абонементы',m:'Замеры',p:'Фото',w:'Тренировки',n:'КБЖУ'};
   return `<button class="back" data-a="back">← Клиенты</button><div class="row client-head" style="justify-content:space-between"><div class="row client-title" style="gap:14px"><i class="av big">${esc(c.name.trim().charAt(0).toUpperCase())}</i><h2>${esc(c.name)}</h2></div><button class="${delc?'dg':''}" data-a="delc">${delc?'Точно удалить?':'Удалить клиента'}</button></div>`+
@@ -228,6 +330,9 @@ async function shrink(f){
 }
 document.addEventListener('click',async e=>{
   const t=e.target.closest('[data-a]');if(!t)return;const a=t.dataset.a,id=t.dataset.id,c=clients[sel];
+  if(a==='calculateNutrition'){await runNutrition(c);return}
+  if(a==='saveNutritionProfile'){await saveNutritionProfile(c);return}
+  if(a==='applyNutrition'){await applyNutrition(c);return}
   if(a==='open'){sel=id;view='c';tab='a';delc=false;render();scrollTo(0,0)}
   else if(a==='back'){sel=null;view='c';render()}
   else if(a==='tab'){tab=id;render()}
@@ -262,7 +367,7 @@ document.addEventListener('change',async e=>{
   else if(i==='cnote'){cfg.note=e.target.value;await saveCfg()}
   else if(e.target.dataset.pl!==undefined){cfg.pl[+e.target.dataset.pl].c=+e.target.value;await saveCfg()}
   else if(i==='np_pr'){const x=cfg.pl[+e.target.value];if(e.target.value!==''&&x){$('#np_pk').value=x.pk;$('#np_c').value=x.c}}
-  else if(c&&i.startsWith('nutrition_')){const key=i.slice(10);if(!['calories','protein','fat','carbs','notes'].includes(key))return;if(key!=='notes'&&!e.target.validity.valid)return toast('Введите число не меньше нуля');c.nutrition={...(c.nutrition||{}),[key]:e.target.value};if(col)await col.doc(c.id).set(c);toast('КБЖУ сохранено')}
+  else if(c&&i.startsWith('nutrition_')){const key=i.slice(10);if(!['calories','protein','fat','carbs','notes'].includes(key))return;if(key!=='notes'&&!e.target.validity.valid)return toast('Введите число не меньше нуля');c.nutrition={...(c.nutrition||{}),[key]:e.target.value,origin:'manual',updatedAt:new Date().toISOString()};const status=$('#nutrition-origin');if(status)status.textContent='Цели изменены вручную';if(col)await col.doc(c.id).set(c);toast('КБЖУ сохранено')}
   else if(c&&(i==='c_g'||i==='c_h'||i==='c_age'||i==='c_n'||i==='c_p')){if(!e.target.validity.valid)return toast('Проверьте значение');c[{c_g:'g',c_h:'h',c_age:'age',c_n:'n',c_p:'ph'}[i]]=e.target.value;clients[c.id]=c;if(col)try{await col.doc(c.id).set(c)}catch(_){toast('Не удалось сохранить')}}
 });
 $('#q').addEventListener('input',e=>{q=e.target.value;render()});
