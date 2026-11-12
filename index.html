@@ -113,6 +113,8 @@ input[type=date]::-webkit-date-and-time-value{text-align:left;min-height:1.5em}
 
 .nutrition-section{margin-top:20px}.calc-wide{grid-column:1/-1}.calc-checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}.calc-checks label{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--bd);padding:10px;border-radius:12px;color:var(--tx);font-size:14px}.calc-checks input{width:20px;height:20px;flex:none;margin-top:1px}.calc-result{margin-top:16px}.calc-result .warn{display:block;margin:8px 0}.calc-result ul{padding-left:20px}.calc-help{font-size:13px;color:var(--mu);margin:8px 0 14px}.calc-inputs label{margin-bottom:4px}.calc-actions{margin-top:12px}.calc-result .grid{margin:14px 0}.nutrition-history{padding:12px 0;border-bottom:1px solid var(--bd)}.nutrition-history summary{font-size:14px;overflow-wrap:anywhere}.nutrition-history p{overflow-wrap:anywhere}.nutrition-section a{color:var(--ac)}.nutrition-section select{max-width:100%}.calc-section-title{font-size:18px;margin:0 0 10px}.calc-checks fieldset{min-width:0}
 @media(max-width:400px){.calc-checks{grid-template-columns:minmax(0,1fr)}.calc-actions button{width:100%}}
+.cancel-reason{width:auto;max-width:100%}
+@media(max-width:720px){.cancel-reason{flex:1 1 100%;width:100%}}
 </style>
 </head>
 <body>
@@ -134,7 +136,7 @@ let th='dark';try{th=localStorage.getItem('th')||'dark'}catch(_){}
 const applyTh=()=>{document.documentElement.dataset.theme=th;$('#th').textContent=th==='dark'?'☀️':'🌙'};
 applyTh();
 $('#th').addEventListener('click',()=>{th=th==='dark'?'light':'dark';try{localStorage.setItem('th',th)}catch(_){}applyTh()});
-const M=[['weight','Вес, кг'],['chest','Грудь, см'],['waist','Талия, см'],['hips','Бёдра, см'],['arm','Бицепс, см'],['thigh','Бедро, см']];
+const M=[['weight','Вес, кг'],['chest','Грудь, см'],['waist','Талия, см'],['hips','Бёдра, см'],['arm','Бицепс, см'],['thigh','Бедро, см'],['underBust','Под грудью, см'],['underWaist','Под талией, см'],['legLeft','Нога левая, см'],['legRight','Нога правая, см'],['thighLeft','Бедро левое, см'],['thighRight','Бедро правое, см'],['armLeft','Бицепс левый, см'],['armRight','Бицепс правый, см']];
 const PT={b:'До',p:'Прогресс',a:'После'};
 let col=null,assets=null,clients={},sel=null,tab='m',metric='weight',q='',loaded=false,delc=false;
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -301,11 +303,26 @@ function render(){
 }
 const fmtR=n=>(+n).toLocaleString('ru-RU')+' ₽';
 const addD=(d,n)=>{const x=new Date(d+'T00:00:00Z');x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)};
-function st(s){const left=s.pk-s.v.length,exp=addD(s.d,cfg.days),dl=Math.round((Date.parse(exp)-Date.parse(today()))/864e5);let k='ok',l='Активен';if(left<=0){k='done';l='Завершён'}else if(dl<0){k='bad';l='Срок истёк'}else if(dl<=7){k='warn';l='Ещё '+dl+' дн.'}return{left,exp,dl,k,l}}
+const cancellationLabels={absence:'Прогул',force:'Форс-мажор'};
+const usedSessions=s=>s.v.length+s.x.filter(d=>s.reasons?.[d]==='absence').length;
+function setSessionStatus(s,date,status){
+  const oldCharge=Number(s.v.includes(date))+Number(s.x.includes(date)&&s.reasons?.[date]==='absence');
+  const newCharge=Number(status==='visit'||status==='absence');
+  if(newCharge>oldCharge&&usedSessions(s)-oldCharge+newCharge>s.pk)return false;
+  s.v=s.v.filter(d=>d!==date);
+  s.x=s.x.filter(d=>d!==date);
+  s.reasons={...s.reasons};
+  delete s.reasons[date];
+  if(status==='visit')s.v.push(date);
+  else{s.x.push(date);s.reasons[date]=status;}
+  s.v.sort();s.x.sort();
+  return true;
+}
+function st(s){const left=s.pk-usedSessions(s),exp=addD(s.d,cfg.days),dl=Math.round((Date.parse(exp)-Date.parse(today()))/864e5);let k='ok',l='Активен';if(left<=0){k='done';l='Завершён'}else if(dl<0){k='bad';l='Срок истёк'}else if(dl<=7){k='warn';l='Ещё '+dl+' дн.'}return{left,exp,dl,k,l}}
 const P=(cid,pid)=>clients[cid].s.find(x=>x.id===pid);
-const chip=(c,s,k,d)=>`<span class="ch ${k}">${k==='x'?'✗ ':''}${fmt(d).slice(0,5)}<b data-a="delv" data-c="${c.id}" data-id="${s.id}" data-k="${k}" data-dt="${d}">×</b></span>`;
-const pc=(c,s,own)=>{const i=st(s),pct=Math.min(100,Math.round(s.v.length/s.pk*100)),a=`data-c="${c.id}" data-id="${s.id}"`;
-return `<div class="pass ${i.k}"><div class="row" style="justify-content:space-between;flex-wrap:nowrap;align-items:flex-start"><div>${own?'':`<b class="lnk" data-a="open" data-id="${c.id}">${esc(c.name)}</b> `}<span class="bd ${i.k}">${i.l}</span><br><small>оплата ${fmt(s.d)} · до ${fmt(i.exp)} · ${s.cost?fmtR(s.cost):'сумма не указана'}${s.n?' · '+esc(s.n):''}</small></div><div style="text-align:right;white-space:nowrap"><span class="big">${i.left}</span><small> из ${s.pk}</small></div></div><div class="bar"><i style="width:${pct}%"></i></div><div class="chips">${s.v.map(d=>chip(c,s,'v',d)).join('')}${s.x.map(d=>chip(c,s,'x',d)).join('')}</div><div class="row"><input type="date" id="d_${s.id}" value="${today()}" style="width:auto"><button class="pri" data-a="visit" ${a}>✓ Занятие</button><button data-a="miss" ${a}>✗ Пропуск</button><button class="dg" data-a="delpass" ${a}>${delp===s.id?'Точно удалить?':'Удалить'}</button></div></div>`};
+const chip=(c,s,k,d)=>`<span class="ch ${k}">${k==='x'?'✗ ':''}${fmt(d).slice(0,5)}${k==='x'?' · '+(cancellationLabels[s.reasons?.[d]]||'Без причины'):''}<b data-a="delv" data-c="${c.id}" data-id="${s.id}" data-k="${k}" data-dt="${d}">×</b></span>`;
+const pc=(c,s,own)=>{const i=st(s),pct=Math.min(100,Math.round(usedSessions(s)/s.pk*100)),a=`data-c="${c.id}" data-id="${s.id}"`;
+return `<div class="pass ${i.k}"><div class="row" style="justify-content:space-between;flex-wrap:nowrap;align-items:flex-start"><div>${own?'':`<b class="lnk" data-a="open" data-id="${c.id}">${esc(c.name)}</b> `}<span class="bd ${i.k}">${i.l}</span><br><small>оплата ${fmt(s.d)} · до ${fmt(i.exp)} · ${s.cost?fmtR(s.cost):'сумма не указана'}${s.n?' · '+esc(s.n):''}</small></div><div style="text-align:right;white-space:nowrap"><span class="big">${i.left}</span><small> из ${s.pk}</small></div></div><div class="bar"><i style="width:${pct}%"></i></div><div class="chips">${s.v.map(d=>chip(c,s,'v',d)).join('')}${s.x.map(d=>chip(c,s,'x',d)).join('')}</div><div class="row"><input type="date" id="d_${s.id}" value="${today()}" style="width:auto"><button class="pri" data-a="visit" ${a}>✓ Занятие</button><select class="cancel-reason" id="reason_${s.id}" aria-label="Причина отмены"><option value="">Причина отмены</option><option value="force">Форс-мажор</option><option value="absence">Прогул</option></select><button data-a="miss" ${a}>Отметить отмену</button><button class="dg" data-a="delpass" ${a}>${delp===s.id?'Точно удалить?':'Удалить'}</button></div></div>`};
 const passForm=c=>`<div class="fg">${c?'':`<div style="grid-column:span 2"><label>Клиент (имя)</label><input id="np_n" list="nl" placeholder="Начните вводить имя" autocomplete="off"></div><div><label>Телефон (для нового)</label><input id="np_ph" type="tel"></div>`}<div><label>Пакет</label><select id="np_pr"><option value="">—</option>${cfg.pl.map((x,i)=>`<option value="${i}">${esc(x.n)} · ${x.c}</option>`).join('')}</select></div><div><label>Занятий</label><input id="np_pk" type="number" inputmode="numeric"></div><div><label>Стоимость, ₽</label><input id="np_c" type="number" inputmode="numeric"></div><div><label>Дата оплаты</label><input id="np_d" type="date" value="${today()}"></div><div style="grid-column:span 2"><label>Заметка</label><input id="np_t" placeholder="бартер, остаток…"></div></div><button class="pri" data-a="newpass" data-c="${c?c.id:''}">Оформить абонемент</button>`;
 const tabA=c=>(c.s.length?[...c.s].sort((a,b)=>b.d.localeCompare(a.d)).map(s=>pc(c,s,1)).join(''):'<p class="mu">Абонементов пока нет.</p>')+'<h3>Новый абонемент</h3><div class="form">'+passForm(c)+'</div>';
 function dash(){
@@ -341,8 +358,14 @@ document.addEventListener('click',async e=>{
   else if(a==='nav'){view=id;if(id==='s')sel=null;render()}
   else if(a==='flt'){flt=id;render()}
   else if(a==='period'){const [y,m]=today().split('-').map(Number);cfg.pf=today().slice(0,8)+'01';cfg.pt=new Date(Date.UTC(y,m,0)).toISOString().slice(0,10);await saveCfg();render()}
-  else if(a==='visit'||a==='miss'){const p=P(t.dataset.c,id),dt=val('d_'+id)||today(),k=a==='visit'?'v':'x';if(k==='v'&&p.v.length>=p.pk)return toast('Абонемент закончился — оформите новый');if(!p[k].includes(dt)){p[k].push(dt);p[k].sort()}await save(clients[t.dataset.c])}
-  else if(a==='delv'){const p=P(t.dataset.c,id),k=t.dataset.k;p[k]=p[k].filter(x=>x!==t.dataset.dt);await save(clients[t.dataset.c])}
+  else if(a==='visit'||a==='miss'){
+    const p=P(t.dataset.c,id),date=val('d_'+id)||today();
+    const status=a==='visit'?'visit':val('reason_'+id);
+    if(a==='miss'&&!Object.hasOwn(cancellationLabels,status))return toast('Выберите причину отмены');
+    if(!setSessionStatus(p,date,status))return toast('В абонементе нет занятий для списания');
+    await save(clients[t.dataset.c]);
+  }
+  else if(a==='delv'){const p=P(t.dataset.c,id),k=t.dataset.k;p[k]=p[k].filter(x=>x!==t.dataset.dt);if(k==='x'&&p.reasons)delete p.reasons[t.dataset.dt];await save(clients[t.dataset.c])}
   else if(a==='delpass'){if(delp!==id){delp=id;render();return}delp='';const cl=clients[t.dataset.c];cl.s=cl.s.filter(x=>x.id!==id);await save(cl)}
   else if(a==='newpass'){let cl=clients[t.dataset.c];
     if(!cl){const n=val('np_n').trim();if(!n)return toast('Введите имя клиента');cl=Object.values(clients).find(x=>x.name.trim().toLowerCase()===n.toLowerCase())||{id:nid(),name:n,g:'',h:'',n:'',ph:val('np_ph'),m:[],p:[],w:[],s:[]}}
