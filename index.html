@@ -115,10 +115,10 @@ input[type=date]::-webkit-date-and-time-value{text-align:left;min-height:1.5em}
 @media(max-width:400px){.calc-checks{grid-template-columns:minmax(0,1fr)}.calc-actions button{width:100%}}
 .cancel-reason{width:auto;max-width:100%}
 @media(max-width:720px){.cancel-reason{flex:1 1 100%;width:100%}}
-.measurement-date{grid-column:1/-1}
-.measurement-date input{display:block;width:100%;max-width:18rem;min-inline-size:0;-webkit-appearance:none;appearance:none}
-.measurement-date input::-webkit-date-and-time-value{text-align:left}
-@media(max-width:720px){.measurement-date input{max-width:100%}}
+.measurement-date,.payment-date{grid-column:1/-1}
+.measurement-date input,.payment-date input{display:block;width:100%;max-width:18rem;min-inline-size:0;-webkit-appearance:none;appearance:none}
+.measurement-date input::-webkit-date-and-time-value,.payment-date input::-webkit-date-and-time-value{text-align:left}
+@media(max-width:720px){.measurement-date input,.payment-date input{max-width:100%}}
 </style>
 </head>
 <body>
@@ -329,7 +329,11 @@ const P=(cid,pid)=>clients[cid].s.find(x=>x.id===pid);
 const chip=(c,s,k,d)=>`<span class="ch ${k}">${k==='x'?'✗ ':''}${fmt(d).slice(0,5)}${k==='x'?' · '+(cancellationLabels[s.reasons?.[d]]||'Без причины'):''}<b data-a="delv" data-c="${c.id}" data-id="${s.id}" data-k="${k}" data-dt="${d}">×</b></span>`;
 const pc=(c,s,own)=>{const i=st(s),pct=Math.min(100,Math.round(usedSessions(s)/s.pk*100)),a=`data-c="${c.id}" data-id="${s.id}"`;
 return `<div class="pass ${i.k}"><div class="row" style="justify-content:space-between;flex-wrap:nowrap;align-items:flex-start"><div>${own?'':`<b class="lnk" data-a="open" data-id="${c.id}">${esc(c.name)}</b> `}<span class="bd ${i.k}">${i.l}</span><br><small>оплата ${fmt(s.d)} · до ${fmt(i.exp)} · ${s.cost?fmtR(s.cost):'сумма не указана'}${s.n?' · '+esc(s.n):''}</small></div><div style="text-align:right;white-space:nowrap"><span class="big">${i.left}</span><small> из ${s.pk}</small></div></div><div class="bar"><i style="width:${pct}%"></i></div><div class="chips">${s.v.map(d=>chip(c,s,'v',d)).join('')}${s.x.map(d=>chip(c,s,'x',d)).join('')}</div><div class="row"><input type="date" id="d_${s.id}" value="${today()}" style="width:auto"><button class="pri" data-a="visit" ${a}>✓ Занятие</button><select class="cancel-reason" id="reason_${s.id}" aria-label="Причина отмены"><option value="">Причина отмены</option><option value="force">Форс-мажор</option><option value="absence">Прогул</option></select><button data-a="miss" ${a}>Отметить отмену</button><button class="dg" data-a="delpass" ${a}>${delp===s.id?'Точно удалить?':'Удалить'}</button></div></div>`};
-const passForm=c=>`<div class="fg">${c?'':`<div style="grid-column:span 2"><label>Клиент (имя)</label><input id="np_n" list="nl" placeholder="Начните вводить имя" autocomplete="off"></div><div><label>Телефон (для нового)</label><input id="np_ph" type="tel"></div>`}<div><label>Пакет</label><select id="np_pr"><option value="">—</option>${cfg.pl.map((x,i)=>`<option value="${i}">${esc(x.n)} · ${x.c}</option>`).join('')}</select></div><div><label>Занятий</label><input id="np_pk" type="number" inputmode="numeric"></div><div><label>Стоимость, ₽</label><input id="np_c" type="number" inputmode="numeric"></div><div><label>Дата оплаты</label><input id="np_d" type="date" value="${today()}"></div><div style="grid-column:span 2"><label>Заметка</label><input id="np_t" placeholder="бартер, остаток…"></div></div><button class="pri" data-a="newpass" data-c="${c?c.id:''}">Оформить абонемент</button>`;
+function syncSingleVisitField(){
+  const field=$('#np_visit_field');
+  if(field)field.hidden=Number(val('np_pk'))!==1;
+}
+const passForm=c=>`<div class="fg">${c?'':`<div style="grid-column:span 2"><label>Клиент (имя)</label><input id="np_n" list="nl" placeholder="Начните вводить имя" autocomplete="off"></div><div><label>Телефон (для нового)</label><input id="np_ph" type="tel"></div>`}<div><label>Пакет</label><select id="np_pr"><option value="">—</option>${cfg.pl.map((x,i)=>`<option value="${i}">${esc(x.n)} · ${x.c}</option>`).join('')}</select></div><div><label>Занятий</label><input id="np_pk" type="number" inputmode="numeric"></div><div><label>Стоимость, ₽</label><input id="np_c" type="number" inputmode="numeric"></div><div class="payment-date"><label for="np_d">Дата оплаты</label><input id="np_d" type="date" value="${today()}"></div><div class="payment-date" id="np_visit_field" hidden><label for="np_visit">Дата посещения разовой тренировки</label><input id="np_visit" type="date"><small>Заполните, если тренировка уже прошла.</small></div><div style="grid-column:span 2"><label>Заметка</label><input id="np_t" placeholder="бартер, остаток…"></div></div><button class="pri" data-a="newpass" data-c="${c?c.id:''}">Оформить абонемент</button>`;
 const tabA=c=>(c.s.length?[...c.s].sort((a,b)=>b.d.localeCompare(a.d)).map(s=>pc(c,s,1)).join(''):'<p class="mu">Абонементов пока нет.</p>')+'<h3>Новый абонемент</h3><div class="form">'+passForm(c)+'</div>';
 function dash(){
  const all=[];Object.values(clients).forEach(c=>c.s.forEach(s=>all.push({c,s,i:st(s)})));
@@ -376,7 +380,13 @@ document.addEventListener('click',async e=>{
   else if(a==='newpass'){let cl=clients[t.dataset.c];
     if(!cl){const n=val('np_n').trim();if(!n)return toast('Введите имя клиента');cl=Object.values(clients).find(x=>x.name.trim().toLowerCase()===n.toLowerCase())||{id:nid(),name:n,g:'',h:'',n:'',ph:val('np_ph'),m:[],p:[],w:[],s:[]}}
     const pk=+val('np_pk');if(!pk)return toast('Укажите число занятий');const pi=val('np_pr'),pr=pi===''?null:cfg.pl[+pi];
-    cl.s.push({id:nid(),d:val('np_d')||today(),pk,cost:+val('np_c')||0,v:[],x:[],n:val('np_t').trim(),pr:pr?pr.n:''});await save(cl);toast('Абонемент оформлен')}
+    const visitDate=pk===1?val('np_visit'):'';
+    if(visitDate&&visitDate>today())return toast('Дата посещения ещё не наступила');
+    cl.s.push({id:nid(),d:val('np_d')||today(),pk,cost:+val('np_c')||0,v:visitDate?[visitDate]:[],x:[],n:val('np_t').trim(),pr:pr?pr.n:''});
+    if(visitDate&&view==='s')flt='all';
+    await save(cl);
+    toast(visitDate?'Разовая тренировка и посещение сохранены':'Абонемент оформлен');
+  }
   else if(a==='exp'){try{await exportAll()}catch(_){toast('Не удалось создать файл')}}
   else if(a==='imp'){$('#impf').click()}
   else if(a==='editm'){
@@ -412,10 +422,11 @@ document.addEventListener('change',async e=>{
   else if(i==='rp'||i==='rd'){cfg.rent[cfg.pf+'|'+cfg.pt]={p:$('#rp').checked,d:val('rd')};await saveCfg()}
   else if(i==='cnote'){cfg.note=e.target.value;await saveCfg()}
   else if(e.target.dataset.pl!==undefined){cfg.pl[+e.target.dataset.pl].c=+e.target.value;await saveCfg()}
-  else if(i==='np_pr'){const x=cfg.pl[+e.target.value];if(e.target.value!==''&&x){$('#np_pk').value=x.pk;$('#np_c').value=x.c}}
+  else if(i==='np_pr'){const x=cfg.pl[+e.target.value];if(e.target.value!==''&&x){$('#np_pk').value=x.pk;$('#np_c').value=x.c}syncSingleVisitField()}
   else if(c&&i.startsWith('nutrition_')){const key=i.slice(10);if(!['calories','protein','fat','carbs','notes'].includes(key))return;if(key!=='notes'&&!e.target.validity.valid)return toast('Введите число не меньше нуля');c.nutrition={...(c.nutrition||{}),[key]:e.target.value,origin:'manual',updatedAt:new Date().toISOString()};const status=$('#nutrition-origin');if(status)status.textContent='Цели изменены вручную';if(col)await col.doc(c.id).set(c);toast('КБЖУ сохранено')}
   else if(c&&(i==='c_g'||i==='c_h'||i==='c_age'||i==='c_n'||i==='c_p')){if(!e.target.validity.valid)return toast('Проверьте значение');c[{c_g:'g',c_h:'h',c_age:'age',c_n:'n',c_p:'ph'}[i]]=e.target.value;clients[c.id]=c;if(col)try{await col.doc(c.id).set(c)}catch(_){toast('Не удалось сохранить')}}
 });
+document.addEventListener('input',e=>{if(e.target.id==='np_pk')syncSingleVisitField()});
 $('#q').addEventListener('input',e=>{q=e.target.value;render()});
 /* ---------- Локальное хранилище: localStorage (данные) + IndexedDB (фото) ---------- */
 const LS='trainer-journal-v1',PURL={};
