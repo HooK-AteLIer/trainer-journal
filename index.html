@@ -205,6 +205,19 @@ function readNutritionForm(){
  const p={};keys.forEach(k=>p[k]=val('nc_'+k).trim());p.conditions=Object.keys(NC_HEALTH).filter(k=>$('#nc_condition_'+k)?.checked);return p;
 }
 // Pure estimate: clinical flags gate the calculation; never apply medication/disease multipliers.
+const nutritionGoals={
+  maintain:{label:'Поддержание веса',percent:0},
+  lose:{label:'Снижение веса (−10%)',percent:-10},
+  lose15:{label:'Снижение веса (−15%)',percent:-15},
+  lose20:{label:'Снижение веса (−20%)',percent:-20},
+  lose25:{label:'Снижение веса (−25%)',percent:-25},
+  lose30:{label:'Снижение веса (−30%)',percent:-30},
+  gain:{label:'Набор веса (+5%)',percent:5},
+  gain10:{label:'Набор веса (+10%)',percent:10},
+  gain15:{label:'Набор веса (+15%)',percent:15},
+  gain20:{label:'Набор веса (+20%)',percent:20},
+  gain25:{label:'Набор веса (+25%)',percent:25}
+};
 function estimateNutrition(p){
  const errors=[],clinical=[];const number=k=>p[k]!==''&&p[k]!=null&&Number.isFinite(Number(p[k]))?Number(p[k]):NaN;
  const age=number('age'),height=number('height'),weight=number('weight'),activity=number('activity'),proteinPct=number('proteinPct'),fatPct=number('fatPct'),carbsPct=100-proteinPct-fatPct;
@@ -213,7 +226,7 @@ function estimateNutrition(p){
  if(!(weight>=25&&weight<=350))errors.push('Укажите текущий вес от 25 до 350 кг.');
  if(!['female','male'].includes(p.sex))errors.push('Выберите вариант формулы по полу.');
  if(!NC_ACTIVITY.some(a=>Number(a[0])===activity))errors.push('Выберите суммарную активность с учётом работы и тренировок.');
- if(!['lose','maintain','gain'].includes(p.goal))errors.push('Выберите цель.');
+ if(!Object.hasOwn(nutritionGoals,p.goal))errors.push('Выберите цель.');
  if(!(proteinPct>=10&&proteinPct<=35&&fatPct>=20&&fatPct<=35&&carbsPct>=45&&carbsPct<=65))errors.push('Распределение: белки 10–35%, жиры 20–35%, углеводы (остаток) 45–65%.');
  if(!['none','present'].includes(p.healthStatus))clinical.push('Сначала уточните состояние здоровья клиента.');
  if(!['none','taking'].includes(p.medicationStatus))clinical.push('Сначала уточните приём лекарств.');
@@ -224,11 +237,11 @@ function estimateNutrition(p){
  if(Number.isFinite(bmi)&&bmi<18.5)clinical.push('При недостаточной массе тела нужен индивидуальный план специалиста.');
  if(errors.length||clinical.length)return {ok:false,errors,clinical};
  const resting=10*weight+6.25*height-5*age+(p.sex==='male'?5:-161);
- const maintenance=resting*activity,factor={lose:.9,maintain:1,gain:1.05}[p.goal],calories=Math.round(maintenance*factor/10)*10;
+ const maintenance=resting*activity,factor=1+nutritionGoals[p.goal].percent/100,calories=Math.round(maintenance*factor/10)*10;
  if(calories<1200)return {ok:false,errors:[],clinical:['Оценка ниже 1200 ккал/сутки: автоматическая цель не формируется, нужен специалист. Это ограничение калькулятора, а не универсальная безопасная норма.']};
  return {ok:true,resting:Math.round(resting),maintenance:Math.round(maintenance),calories,protein:Math.round(calories*proteinPct/100/4),fat:Math.round(calories*fatPct/100/9),carbs:Math.round(calories*carbsPct/100/4),proteinPct,fatPct,carbsPct,activity,goal:p.goal,method:'Mifflin–St Jeor',bmi};
 }
-const ncGoal=g=>({lose:'Снижение веса (−10%)',maintain:'Поддержание веса',gain:'Набор веса (+5%)'}[g]||g);
+const ncGoal=g=>Object.hasOwn(nutritionGoals,g)?nutritionGoals[g].label:g;
 function nutritionPreview(c){
  const entry=nutritionResults[c.id];if(!entry)return '<p class="calc-help">Заполните анкету и нажмите «Рассчитать». Сохранённые цели не изменятся до нажатия «Применить к клиенту».</p>';
  const r=entry.result;if(!r.ok)return `<div class="warn" role="status"><b>Нужны уточнения</b><ul>${[...r.errors,...r.clinical].map(x=>`<li>${esc(x)}</li>`).join('')}</ul>${r.clinical.length?'<p>Анкету можно сохранить. Согласованные значения внесите в поля «Сохранённые цели» выше. Лекарства и их дозировки здесь не подбираются.</p>':''}</div>`;
@@ -248,7 +261,7 @@ function tabN(c){
  ${field('weight','Текущий вес, кг','type="number" min="25" max="350" step="0.1" inputmode="decimal"')}
  ${select('sex','Вариант формулы',[['','Выберите'],['female','Женская формула'],['male','Мужская формула']])}
  <div class="calc-wide">${select('activity','Общая активность: работа + образ жизни + тренировки',[['','Выберите уровень'],...NC_ACTIVITY.map(a=>[a[0],a[1]+' · ×'+a[0]])])}<p class="calc-help">${NC_ACTIVITY.map(a=>a[1]+': '+a[2]+'.').join(' ')} Нагрузка учитывается один раз, без отдельной прибавки за тренировки.</p></div>
- ${select('goal','Цель',[['maintain','Поддержание'],['lose','Плавное снижение (−10%)'],['gain','Плавный набор (+5%)']])}
+ ${select('goal','Цель',Object.entries(nutritionGoals).map(([key,goal])=>[key,goal.label]))}
  ${field('job','Работа и график','placeholder="Например: офис, ночные смены"')}
  <div class="calc-wide"><label for="nc_lifestyle">Образ жизни и нагрузка</label><textarea id="nc_lifestyle" placeholder="Ходьба, тренировки, сон, восстановление…">${esc(p.lifestyle)}</textarea><p class="calc-help">График работы и заметки сохраняются в анкете. Численно нагрузку задаёт выбранный выше общий уровень активности.</p></div>
  ${field('proteinPct','Белки, % калорий','type="number" min="10" max="35" step="1" inputmode="numeric"')}
@@ -261,7 +274,7 @@ function tabN(c){
  <div class="fg calc-inputs"><div class="calc-wide"><label for="nc_healthNotes">Особенности здоровья и ограничения врача</label><textarea id="nc_healthNotes" placeholder="Со слов клиента; не ставьте диагноз по анкете">${esc(p.healthNotes)}</textarea></div><div class="calc-wide"><label for="nc_medications">Принимаемые препараты</label><textarea id="nc_medications" placeholder="Название и известные ограничения; не меняйте дозировку по расчёту">${esc(p.medications)}</textarea></div><div class="calc-wide"><label for="nc_allergies">Аллергии, непереносимость и предпочтения</label><textarea id="nc_allergies" placeholder="Для составления меню; автоматически КБЖУ не меняют">${esc(p.allergies)}</textarea></div></div>
  <p class="calc-help">При заболевании, беременности, грудном вскармливании, приёме лекарств или неуточнённом анамнезе автоматические цели не формируются: используйте значения специалиста. Анкета хранится в браузере вместе с клиентом и включается в экспорт.</p>
  <div class="row calc-actions"><button class="pri" data-a="calculateNutrition">Рассчитать</button><button data-a="saveNutritionProfile">Сохранить анкету</button></div><div id="nutrition-preview" class="calc-result" aria-live="polite">${nutritionPreview(c)}</div>
- <details style="margin-top:20px"><summary>Как считается и источники</summary><p class="calc-help">Миффлин — Сан Жеор: 10 × вес + 6,25 × рост − 5 × возраст; +5 для мужской формулы, −161 для женской. Поддержание = обмен в покое × выбранная активность (приближённые уровни PAL). Цель: поддержание, −10% или +5%; это настройки калькулятора, не прогноз темпа изменения веса. Белки и углеводы: 4 ккал/г; жиры: 9 ккал/г. Смена работы и нагрузки требует пересмотра уровня активности.</p><p class="calc-help"><a href="https://pubmed.ncbi.nlm.nih.gov/2305711/" target="_blank" rel="noopener">Исследование формулы</a> · <a href="https://www.niddk.nih.gov/bwp" target="_blank" rel="noopener">NIDDK: оценка активности и ограничения</a> · <a href="https://www.canada.ca/en/health-canada/services/food-nutrition/healthy-eating/dietary-reference-intakes/tables/reference-values-macronutrients.html" target="_blank" rel="noopener">Диапазоны БЖУ</a> · <a href="https://www.cdc.gov/diabetes/healthy-eating/diabetes-and-kidney-disease-food.html" target="_blank" rel="noopener">Диабет, лекарства и болезни почек</a></p></details></section>
+ <details style="margin-top:20px"><summary>Как считается и источники</summary><p class="calc-help">Миффлин — Сан Жеор: 10 × вес + 6,25 × рост − 5 × возраст; +5 для мужской формулы, −161 для женской. Поддержание = обмен в покое × выбранная активность (приближённые уровни PAL). Калорийность для выбранной цели = поддержание с поправкой на выбранный процент. Белки и углеводы: 4 ккал/г; жиры: 9 ккал/г. Смена работы и нагрузки требует пересмотра уровня активности.</p><p class="calc-help"><a href="https://pubmed.ncbi.nlm.nih.gov/2305711/" target="_blank" rel="noopener">Исследование формулы</a> · <a href="https://www.niddk.nih.gov/bwp" target="_blank" rel="noopener">NIDDK: оценка активности и ограничения</a> · <a href="https://www.canada.ca/en/health-canada/services/food-nutrition/healthy-eating/dietary-reference-intakes/tables/reference-values-macronutrients.html" target="_blank" rel="noopener">Диапазоны БЖУ</a> · <a href="https://www.cdc.gov/diabetes/healthy-eating/diabetes-and-kidney-disease-food.html" target="_blank" rel="noopener">Диабет, лекарства и болезни почек</a></p></details></section>
  <section class="nutrition-section"><h3>История расчётов (${(c.nutritionHistory||[]).length})</h3>${(c.nutritionHistory||[]).slice(0,20).map(h=>`<details class="nutrition-history"><summary>${esc(new Date(h.at).toLocaleString('ru-RU'))} · ${esc(h.result.calories)} ккал · Б ${esc(h.result.protein)} / Ж ${esc(h.result.fat)} / У ${esc(h.result.carbs)} г</summary><p class="calc-help">${esc(ncGoal(h.input.goal))}; ${esc(h.input.age)} лет, ${esc(h.input.height)} см, ${esc(h.input.weight)} кг; активность ×${esc(h.input.activity)}. ${esc(h.result.method)}</p><p class="calc-help">Работа: ${esc(h.input.job||'не указана')}. Образ жизни: ${esc(h.input.lifestyle||'не указан')}. Ограничения питания: ${esc(h.input.allergies||'не указаны')}.</p></details>`).join('')||'<p class="mu">Применённые расчёты появятся здесь.</p>'}</section>`;
 }
 async function saveNutritionProfile(c){
