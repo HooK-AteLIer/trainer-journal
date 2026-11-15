@@ -247,6 +247,15 @@ function nutritionPreview(c){
  const r=entry.result;if(!r.ok)return `<div class="warn" role="status"><b>Нужны уточнения</b><ul>${[...r.errors,...r.clinical].map(x=>`<li>${esc(x)}</li>`).join('')}</ul>${r.clinical.length?'<p>Анкету можно сохранить. Согласованные значения внесите в поля «Сохранённые цели» выше. Лекарства и их дозировки здесь не подбираются.</p>':''}</div>`;
  return `<div role="status"><h3>Ориентир для ${esc(c.name)}</h3><div class="grid">${[['Калории',r.calories,'ккал'],['Белки',r.protein,'г'],['Жиры',r.fat,'г'],['Углеводы',r.carbs,'г']].map(([n,v,u])=>`<div class="card"><small>${n}</small><b>${v} ${u}</b></div>`).join('')}</div><p class="calc-help">Обмен в покое ≈ ${r.resting} ккал · поддержание ≈ ${r.maintenance} ккал · активность ×${r.activity}. ${esc(ncGoal(r.goal))}. Б/Ж/У: ${r.proteinPct}/${r.fatPct}/${r.carbsPct}% энергии.</p><p class="calc-help">Это начальная оценка, а не лечебный рацион. Уточняйте её по динамике веса, самочувствию и нагрузке; округление граммов может немного менять итоговую калорийность.</p><button class="pri" data-a="applyNutrition" data-client="${esc(c.id)}">Применить к клиенту ${esc(c.name)}</button><small style="display:block;margin-top:8px">Заменит текущие цели КБЖУ. Анкета и расчёт сохранятся в истории клиента.</small></div>`;
 }
+function nutritionPdf(c){
+  const file=c.nutritionPdf;
+  const url=file?PU(file.id):'';
+  return `<section class="form nutrition-section"><h3 style="margin-top:0">Рекомендации по питанию · PDF</h3>
+  ${url?`<p><a href="${url}" target="_blank" rel="noopener">Открыть PDF</a> · <a href="${url}" download="${esc(file.name)}">Скачать</a></p><p class="calc-help">${esc(file.name)}</p>`:''}
+  <label for="nutrition_pdf_file">${file?'Заменить PDF':'Прикрепить PDF'}</label>
+  <input type="file" id="nutrition_pdf_file" accept=".pdf,application/pdf">
+  <p class="calc-help">Файл хранится на этом устройстве и включается в экспорт журнала.</p></section>`;
+}
 function tabN(c){
  const n=c.nutrition||{},p=nutritionDrafts[c.id]||nutritionInitial(c);
  const field=(key,label,extra='')=>`<div><label for="nc_${key}">${label}</label><input id="nc_${key}" value="${esc(p[key]??'')}" ${extra}></div>`;
@@ -254,7 +263,7 @@ function tabN(c){
  const fields=[['calories','Калории, ккал'],['protein','Белки, г'],['fat','Жиры, г'],['carbs','Углеводы, г']];
  const stamp=n.updatedAt?new Date(n.updatedAt).toLocaleDateString('ru-RU'):'';
  const origin=n.needsReview?'Анкета изменена — проверьте сохранённые цели со специалистом или рассчитайте заново':n.origin==='calculator'?'Расчёт применён '+stamp:n.origin==='manual'?'Цели изменены вручную': 'Можно заполнить вручную или применить результат калькулятора';
- return `<div class="form"><h3 style="margin-top:0">Сохранённые цели · ${esc(c.name)}</h3><p id="nutrition-origin" class="calc-help">${esc(origin)}</p><div class="fg">`+fields.map(([key,label])=>`<div><label for="nutrition_${key}">${label}</label><input id="nutrition_${key}" type="number" min="0" step="0.1" inputmode="decimal" value="${esc(n[key]??'')}" placeholder="Не указано"></div>`).join('')+`</div><label for="nutrition_notes">Заметки по питанию</label><textarea id="nutrition_notes" placeholder="Назначения и рекомендации…">${esc(n.notes||'')}</textarea><small>Сохраняется автоматически на этом устройстве.</small></div>
+ return nutritionPdf(c)+`<div class="form"><h3 style="margin-top:0">Сохранённые цели · ${esc(c.name)}</h3><p id="nutrition-origin" class="calc-help">${esc(origin)}</p><div class="fg">`+fields.map(([key,label])=>`<div><label for="nutrition_${key}">${label}</label><input id="nutrition_${key}" type="number" min="0" step="0.1" inputmode="decimal" value="${esc(n[key]??'')}" placeholder="Не указано"></div>`).join('')+`</div><label for="nutrition_notes">Заметки по питанию</label><textarea id="nutrition_notes" placeholder="Назначения и рекомендации…">${esc(n.notes||'')}</textarea><small>Сохраняется автоматически на этом устройстве.</small></div>
  <section class="form nutrition-section"><h3 class="calc-section-title">Калькулятор КБЖУ</h3><p class="calc-help">Анкета клиента ${esc(c.name)}. Возраст и рост берутся из карточки, вес — из последнего замера при первом заполнении. Проверьте их перед расчётом.</p><div class="fg calc-inputs">
  ${field('age','Возраст, лет','type="number" min="1" max="120" step="1" inputmode="numeric"')}
  ${field('height','Рост, см','type="number" min="100" max="250" step="0.1" inputmode="decimal"')}
@@ -436,6 +445,20 @@ document.addEventListener('change',async e=>{
   else if(i==='cnote'){cfg.note=e.target.value;await saveCfg()}
   else if(e.target.dataset.pl!==undefined){cfg.pl[+e.target.dataset.pl].c=+e.target.value;await saveCfg()}
   else if(i==='np_pr'){const x=cfg.pl[+e.target.value];if(e.target.value!==''&&x){$('#np_pk').value=x.pk;$('#np_c').value=x.c}syncSingleVisitField()}
+  else if(c&&i==='nutrition_pdf_file'){
+    const file=e.target.files[0];
+    if(!file)return;
+    e.target.disabled=true;
+    try{
+      if(await file.slice(0,5).text()!=='%PDF-')throw Error('Invalid PDF');
+      const previous=c.nutritionPdf;
+      const {id}=await assets.upload(new Blob([file],{type:'application/pdf'}));
+      c.nutritionPdf={id,name:file.name};
+      await save(c);
+      if(previous)await assets.delete(previous.id).catch(()=>{});
+      toast('PDF прикреплён');
+    }catch(_){e.target.disabled=false;e.target.value='';toast('Не удалось прикрепить PDF');}
+  }
   else if(c&&i.startsWith('nutrition_')){const key=i.slice(10);if(!['calories','protein','fat','carbs','notes'].includes(key))return;if(key!=='notes'&&!e.target.validity.valid)return toast('Введите число не меньше нуля');c.nutrition={...(c.nutrition||{}),[key]:e.target.value,origin:'manual',updatedAt:new Date().toISOString()};const status=$('#nutrition-origin');if(status)status.textContent='Цели изменены вручную';if(col)await col.doc(c.id).set(c);toast('КБЖУ сохранено')}
   else if(c&&(i==='c_g'||i==='c_h'||i==='c_age'||i==='c_n'||i==='c_p')){if(!e.target.validity.valid)return toast('Проверьте значение');c[{c_g:'g',c_h:'h',c_age:'age',c_n:'n',c_p:'ph'}[i]]=e.target.value;clients[c.id]=c;if(col)try{await col.doc(c.id).set(c)}catch(_){toast('Не удалось сохранить')}}
 });
