@@ -319,10 +319,41 @@ const trainingTypes={individual:'Индивидуальные',split:'Сплит
 function trainingTypeSelect(id,value='',required=false){
   return `<div><label for="${id}">Формат тренировок</label><select id="${id}" ${required?'required':''}><option value="">${required?'Выберите формат':'Не указан'}</option>${Object.entries(trainingTypes).map(([key,label])=>`<option value="${key}" ${key===value?'selected':''}>${label}</option>`).join('')}</select></div>`;
 }
+function splitPartner(c){
+  const partner=clients[c.splitPartnerId];
+  return c.trainingType==='split'&&partner?.trainingType==='split'&&partner.splitPartnerId===c.id?partner:null;
+}
+function splitPairField(c){
+  if(c.trainingType!=='split')return '';
+  const partner=splitPartner(c);
+  const candidates=Object.values(clients).filter(other=>other.id!==c.id&&other.trainingType==='split'&&(!splitPartner(other)||other.id===partner?.id));
+  return `<div><label for="c_split_partner">Партнёр по сплиту</label><select id="c_split_partner"><option value="">Выберите партнёра</option>${candidates.map(other=>`<option value="${esc(other.id)}" ${other.id===partner?.id?'selected':''}>${esc(other.name)}</option>`).join('')}</select><small>Выберите «Сплит» в карточках обоих клиентов.</small></div>`;
+}
+function saveTogether(changed){
+  const next={...store};
+  for(const client of changed)next[client.id]=client;
+  try{localStorage.setItem(LS,JSON.stringify(next))}
+  catch(_){toast('Не удалось сохранить. Проверьте свободное место');render();return false}
+  store=next;
+  for(const client of changed)clients[client.id]=client;
+  const y=scrollY;render();scrollTo(0,y);
+  return true;
+}
+function updateSplitPair(c,partnerId,type=c.trainingType){
+  const previous=splitPartner(c);
+  const partner=partnerId?clients[partnerId]:null;
+  if(partnerId&&(!partner||partner.id===c.id||partner.trainingType!=='split'||(splitPartner(partner)&&splitPartner(partner).id!==c.id))){
+    toast('Этот клиент недоступен для сплита');render();return;
+  }
+  const changed=[{...c,trainingType:type,splitPartnerId:partner?.id||''}];
+  if(previous&&previous.id!==partner?.id)changed.push({...previous,splitPartnerId:''});
+  if(partner)changed.push({...partner,splitPartnerId:c.id});
+  saveTogether(changed);
+}
 function detail(c){
   const T={a:'Абонементы',m:'Замеры',p:'Фото',w:'Тренировки',n:'КБЖУ'};
   return `<button class="back" data-a="back">← Клиенты</button><div class="row client-head" style="justify-content:space-between"><div class="row client-title" style="gap:14px"><i class="av big">${esc(c.name.trim().charAt(0).toUpperCase())}</i><h2>${esc(c.name)}</h2></div><button class="${delc?'dg':''}" data-a="delc">${delc?'Точно удалить?':'Удалить клиента'}</button></div>`+
-  `<div class="fg" style="margin-top:10px"><div style="grid-column:span 2"><label class="mu">Цель</label><input id="c_g" value="${esc(c.g)}" placeholder="Похудение, набор массы…"></div><div><label class="mu" for="c_age">Возраст, лет</label><input id="c_age" type="number" min="0" max="120" step="1" inputmode="numeric" value="${esc(c.age??'')}" placeholder="Не указан"></div><div><label class="mu" for="c_h">Рост, см</label><input id="c_h" type="number" min="0" max="300" step="0.1" inputmode="decimal" value="${esc(c.h)}" placeholder="Не указан"></div><div><label class="mu">Телефон</label><input id="c_p" type="tel" value="${esc(c.ph)}"></div>${trainingTypeSelect('c_training_type',c.trainingType)}</div>`+
+  `<div class="fg" style="margin-top:10px"><div style="grid-column:span 2"><label class="mu">Цель</label><input id="c_g" value="${esc(c.g)}" placeholder="Похудение, набор массы…"></div><div><label class="mu" for="c_age">Возраст, лет</label><input id="c_age" type="number" min="0" max="120" step="1" inputmode="numeric" value="${esc(c.age??'')}" placeholder="Не указан"></div><div><label class="mu" for="c_h">Рост, см</label><input id="c_h" type="number" min="0" max="300" step="0.1" inputmode="decimal" value="${esc(c.h)}" placeholder="Не указан"></div><div><label class="mu">Телефон</label><input id="c_p" type="tel" value="${esc(c.ph)}"></div>${trainingTypeSelect('c_training_type',c.trainingType)}${splitPairField(c)}</div>`+
   `<textarea id="c_n" placeholder="Заметки: травмы, ограничения, питание…">${esc(c.n)}</textarea>`+
   `<div class="tabs client-tabs" role="group" aria-label="Разделы клиента">${Object.entries(T).map(([k,l])=>`<button class="${tab===k?'on':''}" data-a="tab" data-id="${k}">${l}</button>`).join('')}</div>`+
   (tab==='a'?tabA(c):tab==='m'?tabM(c):tab==='p'?tabP(c):tab==='n'?tabN(c):tabW(c));
@@ -353,9 +384,53 @@ function setSessionStatus(s,date,status){
 }
 function st(s){const left=s.pk-usedSessions(s),exp=addD(s.d,cfg.days),dl=Math.round((Date.parse(exp)-Date.parse(today()))/864e5);let k='ok',l='Активен';if(left<=0){k='done';l='Завершён'}else if(dl<0){k='bad';l='Срок истёк'}else if(dl<=7){k='warn';l='Ещё '+dl+' дн.'}return{left,exp,dl,k,l}}
 const P=(cid,pid)=>clients[cid].s.find(x=>x.id===pid);
+function linkedSession(pass,date){
+  const link=pass.sharedSessions?.[date];
+  if(!link)return null;
+  const client=clients[link.clientId];
+  const other=client?.s.find(item=>item.id===link.passId);
+  if(other?.sharedSessions?.[date]?.key!==link.key)return null;
+  return {client,pass:other};
+}
+function changeAttendance(client,pass,date,status){
+  let linked=linkedSession(pass,date);
+  if(!linked&&status&&client.trainingType==='split'){
+    const partner=splitPartner(client);
+    if(!partner)return toast('Выберите партнёра по сплиту в карточке клиента');
+    const forDate=item=>item.d<=date&&date<=st(item).exp;
+    if(!forDate(pass))return toast('Дата занятия вне срока абонемента');
+    const passes=partner.s.filter(forDate);
+    if(passes.some(item=>item.v.includes(date)||item.x.includes(date)))return toast('У партнёра уже есть отдельная отметка на эту дату');
+    const other=passes.filter(item=>status==='force'||st(item).left>0).sort((a,b)=>b.d.localeCompare(a.d))[0];
+    if(!other)return toast('У партнёра нет подходящего абонемента на эту дату');
+    linked={client:partner,pass:other};
+  }
+  const targets=[{client,pass},...(linked?[linked]:[])];
+  const key=linked?(pass.sharedSessions?.[date]?.key||nid()):'';
+  const changed=[];
+  for(const [index,target] of targets.entries()){
+    const copy=JSON.parse(JSON.stringify(target.client));
+    const entry=copy.s.find(item=>item.id===target.pass.id);
+    if(status){
+      if(!setSessionStatus(entry,date,status))return toast('Не хватает занятий в абонементе: '+copy.name);
+    }else{
+      entry.v=entry.v.filter(value=>value!==date);
+      entry.x=entry.x.filter(value=>value!==date);
+      if(entry.reasons)delete entry.reasons[date];
+    }
+    entry.sharedSessions??={};
+    delete entry.sharedSessions[date];
+    if(status&&key){
+      const other=targets[1-index];
+      entry.sharedSessions[date]={key,clientId:other.client.id,passId:other.pass.id};
+    }
+    changed.push(copy);
+  }
+  saveTogether(changed);
+}
 const chip=(c,s,k,d)=>`<span class="ch ${k}">${k==='x'?'✗ ':''}${fmt(d).slice(0,5)}${k==='x'?' · '+(cancellationLabels[s.reasons?.[d]]||'Без причины'):''}<b data-a="delv" data-c="${c.id}" data-id="${s.id}" data-k="${k}" data-dt="${d}">×</b></span>`;
 const pc=(c,s,own)=>{const i=st(s),pct=Math.min(100,Math.round(usedSessions(s)/s.pk*100)),a=`data-c="${c.id}" data-id="${s.id}"`;
-return `<div class="pass ${i.k}"><div class="row" style="justify-content:space-between;flex-wrap:nowrap;align-items:flex-start"><div>${own?'':`<b class="lnk" data-a="open" data-id="${c.id}">${esc(c.name)}</b> `}<span class="bd ${i.k}">${i.l}</span><br><small>оплата ${fmt(s.d)} · до ${fmt(i.exp)} · ${s.cost?fmtR(s.cost):'сумма не указана'}${s.n?' · '+esc(s.n):''}</small></div><div style="text-align:right;white-space:nowrap"><span class="big">${i.left}</span><small> из ${s.pk}</small></div></div><div class="bar"><i style="width:${pct}%"></i></div><div class="chips">${s.v.map(d=>chip(c,s,'v',d)).join('')}${s.x.map(d=>chip(c,s,'x',d)).join('')}</div><div class="row"><input type="date" id="d_${s.id}" value="${today()}" style="width:auto"><button class="pri" data-a="visit" ${a}>✓ Занятие</button><select class="cancel-reason" id="reason_${s.id}" aria-label="Причина отмены"><option value="">Причина отмены</option><option value="force">Форс-мажор</option><option value="absence">Прогул</option></select><button data-a="miss" ${a}>Отметить отмену</button><button class="dg" data-a="delpass" ${a}>${delp===s.id?'Точно удалить?':'Удалить'}</button></div></div>`};
+return `<div class="pass ${i.k}"><div class="row" style="justify-content:space-between;flex-wrap:nowrap;align-items:flex-start"><div>${own?'':`<b class="lnk" data-a="open" data-id="${c.id}">${esc(c.name)}</b> `}<span class="bd ${i.k}">${i.l}</span>${splitPartner(c)?` <small>Сплит · ${esc(splitPartner(c).name)}</small>`:''}<br><small>оплата ${fmt(s.d)} · до ${fmt(i.exp)} · ${s.cost?fmtR(s.cost):'сумма не указана'}${s.n?' · '+esc(s.n):''}</small></div><div style="text-align:right;white-space:nowrap"><span class="big">${i.left}</span><small> из ${s.pk}</small></div></div><div class="bar"><i style="width:${pct}%"></i></div><div class="chips">${s.v.map(d=>chip(c,s,'v',d)).join('')}${s.x.map(d=>chip(c,s,'x',d)).join('')}</div><div class="row"><input type="date" id="d_${s.id}" value="${today()}" style="width:auto"><button class="pri" data-a="visit" ${a}>✓ Занятие</button><select class="cancel-reason" id="reason_${s.id}" aria-label="Причина отмены"><option value="">Причина отмены</option><option value="force">Форс-мажор</option><option value="absence">Прогул</option></select><button data-a="miss" ${a}>Отметить отмену</button><button class="dg" data-a="delpass" ${a}>${delp===s.id?'Точно удалить?':'Удалить'}</button></div></div>`};
 function syncSingleVisitField(){
   const field=$('#np_visit_field');
   if(field)field.hidden=Number(val('np_pk'))!==1;
@@ -400,10 +475,9 @@ document.addEventListener('click',async e=>{
     const p=P(t.dataset.c,id),date=val('d_'+id)||today();
     const status=a==='visit'?'visit':val('reason_'+id);
     if(a==='miss'&&!Object.hasOwn(cancellationLabels,status))return toast('Выберите причину отмены');
-    if(!setSessionStatus(p,date,status))return toast('В абонементе нет занятий для списания');
-    await save(clients[t.dataset.c]);
+    changeAttendance(clients[t.dataset.c],p,date,status);
   }
-  else if(a==='delv'){const p=P(t.dataset.c,id),k=t.dataset.k;p[k]=p[k].filter(x=>x!==t.dataset.dt);if(k==='x'&&p.reasons)delete p.reasons[t.dataset.dt];await save(clients[t.dataset.c])}
+  else if(a==='delv'){const client=clients[t.dataset.c];changeAttendance(client,P(client.id,id),t.dataset.dt,null)}
   else if(a==='delpass'){if(delp!==id){delp=id;render();return}delp='';const cl=clients[t.dataset.c];cl.s=cl.s.filter(x=>x.id!==id);await save(cl)}
   else if(a==='newpass'){let cl=clients[t.dataset.c];
     if(!cl){const n=val('np_n').trim();if(!n)return toast('Введите имя клиента');cl=findClientByName(n);
@@ -415,6 +489,7 @@ document.addEventListener('click',async e=>{
     }
     const pk=+val('np_pk');if(!pk)return toast('Укажите число занятий');const pi=val('np_pr'),pr=pi===''?null:cfg.pl[+pi];
     const visitDate=pk===1?val('np_visit'):'';
+    if(visitDate&&cl.trainingType==='split')return toast('Для сплита сначала оформите абонементы обоим, затем отметьте посещение в одном из них');
     if(visitDate&&visitDate>today())return toast('Дата посещения ещё не наступила');
     cl.s.push({id:nid(),d:val('np_d')||today(),pk,cost:+val('np_c')||0,v:visitDate?[visitDate]:[],x:[],n:val('np_t').trim(),pr:pr?pr.n:''});
     if(visitDate&&view==='s')flt='all';
@@ -472,7 +547,9 @@ document.addEventListener('change',async e=>{
     }catch(_){e.target.disabled=false;e.target.value='';toast('Не удалось прикрепить PDF');}
   }
   else if(c&&i.startsWith('nutrition_')){const key=i.slice(10);if(!['calories','protein','fat','carbs','notes'].includes(key))return;if(key!=='notes'&&!e.target.validity.valid)return toast('Введите число не меньше нуля');c.nutrition={...(c.nutrition||{}),[key]:e.target.value,origin:'manual',updatedAt:new Date().toISOString()};const status=$('#nutrition-origin');if(status)status.textContent='Цели изменены вручную';if(col)await col.doc(c.id).set(c);toast('КБЖУ сохранено')}
-  else if(c&&(i==='c_g'||i==='c_h'||i==='c_age'||i==='c_n'||i==='c_p'||i==='c_training_type')){if(!e.target.validity.valid)return toast('Проверьте значение');c[{c_g:'g',c_h:'h',c_age:'age',c_n:'n',c_p:'ph',c_training_type:'trainingType'}[i]]=e.target.value;clients[c.id]=c;if(col)try{await col.doc(c.id).set(c)}catch(_){toast('Не удалось сохранить')}}
+  else if(c&&i==='c_split_partner'){updateSplitPair(c,e.target.value)}
+  else if(c&&i==='c_training_type'){updateSplitPair(c,'',e.target.value)}
+  else if(c&&(i==='c_g'||i==='c_h'||i==='c_age'||i==='c_n'||i==='c_p')){if(!e.target.validity.valid)return toast('Проверьте значение');c[{c_g:'g',c_h:'h',c_age:'age',c_n:'n',c_p:'ph'}[i]]=e.target.value;clients[c.id]=c;if(col)try{await col.doc(c.id).set(c)}catch(_){toast('Не удалось сохранить')}}
 });
 document.addEventListener('input',e=>{if(e.target.id==='np_pk')syncSingleVisitField();
   if(e.target.id==='np_n')$('#np_training_field').hidden=!e.target.value.trim()||!!findClientByName(e.target.value)});
