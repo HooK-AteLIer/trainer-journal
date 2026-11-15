@@ -119,10 +119,11 @@ input[type=date]::-webkit-date-and-time-value{text-align:left;min-height:1.5em}
 .measurement-date input,.payment-date input{display:block;width:100%;max-width:18rem;min-inline-size:0;-webkit-appearance:none;appearance:none}
 .measurement-date input::-webkit-date-and-time-value,.payment-date input::-webkit-date-and-time-value{text-align:left}
 @media(max-width:720px){.measurement-date input,.payment-date input{max-width:100%}}
-.measurement-actions{display:flex;gap:4px;margin-top:4px}
-.measurement-actions button{padding-inline:8px}
-.measurement-history th:first-child,.measurement-history td:first-child{position:sticky;left:0;z-index:1;background:#f6ecee}
-:root[data-theme="dark"] .measurement-history th:first-child,:root[data-theme="dark"] .measurement-history td:first-child{background:#241219}
+.measurement-history{display:grid;gap:8px;min-width:0}
+.measurement-record{min-width:0;padding:12px}
+.measurement-record summary{padding:7px 0}
+.measurement-values{margin:8px 0}
+.measurement-actions{gap:8px}
 </style>
 </head>
 <body>
@@ -175,17 +176,21 @@ function tabM(c){
   const editing=measurementEdit?.clientId===c.id?c.m.find(r=>r.id===measurementEdit.id):null;
   const cards=M.map(([k,l])=>{const s=ser(c,k);if(!s.length)return'';const d=s[s.length-1].v-s[0].v;
     return `<div class="card"><small>${l}</small><b>${s[s.length-1].v}</b><small>${s.length>1?'с начала: '+(d>0?'+':'')+d.toFixed(1):'первый замер'}</small></div>`}).join('');
-  const rows=sorted(c).reverse().map(row=>`<tr>
-    <td><strong>${esc(fmt(row.d))}</strong><div class="measurement-actions">
+  const rows=sorted(c).reverse().map(row=>`<details class="form measurement-record">
+    <summary>${esc(fmt(row.d))}</summary>
+    <div class="scroll measurement-values" tabindex="0" role="region" aria-label="Показатели замера от ${esc(fmt(row.d))}">
+      <table><thead><tr>${M.map(([,label])=>`<th scope="col">${label}</th>`).join('')}</tr></thead>
+      <tbody><tr>${M.map(([key])=>`<td>${esc(row[key]??'')||'—'}</td>`).join('')}</tr></tbody></table>
+    </div>
+    <div class="row measurement-actions">
       <button data-a="editm" data-id="${esc(row.id)}">Изменить</button>
-      <button class="dg" data-a="delm" data-id="${esc(row.id)}" aria-label="Удалить замер">✕</button>
-    </div></td>
-    ${M.map(([key])=>`<td>${esc(row[key]??'')||'—'}</td>`).join('')}
-  </tr>`).join('');
+      <button class="dg" data-a="delm" data-id="${esc(row.id)}">Удалить замер</button>
+    </div>
+  </details>`).join('');
   return `<div class="form" id="measurement-form">${editing?`<h3 style="margin-top:0">Редактирование замера от ${esc(fmt(editing.d))}</h3>`:''}<div class="fg"><div class="measurement-date"><label for="m_d">Дата замера</label><input type="date" id="m_d" value="${esc(editing?.d||today())}"></div>${M.map(([k,l])=>`<div><label for="m_${k}">${l}</label><input type="number" min="0.1" step="0.1" inputmode="decimal" id="m_${k}" value="${esc(editing?.[k]??'')}"></div>`).join('')}</div><div class="row"><button class="pri" data-a="addm">${editing?'Сохранить изменения':'Добавить замер'}</button>${editing?'<button data-a="cancelm">Отменить правку</button>':''}</div></div>`+
   (cards?`<h3>Текущие значения и изменение</h3><div class="grid">${cards}</div>`:'')+
   `<h3>Динамика</h3><label class="mu" for="metric">Показатель</label> <select id="metric" style="width:auto;max-width:100%">${M.map(([k,l])=>`<option value="${k}"${k===metric?' selected':''}>${l}</option>`).join('')}</select><div class="card" style="margin-top:8px">${chart(c)}</div>`+
-  (rows?`<h3>История замеров</h3><div class="scroll measurement-history" tabindex="0" role="region" aria-label="История замеров"><table><thead><tr><th scope="col">Дата</th>${M.map(([,label])=>`<th scope="col">${label}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`:'');
+  (rows?`<h3>История замеров</h3><div class="measurement-history">${rows}</div>`:'');
 }
 function tabP(c){
   const ps=[...c.p].sort((a,b)=>a.d.localeCompare(b.d));
