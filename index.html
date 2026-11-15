@@ -123,6 +123,10 @@ input[type=date]::-webkit-date-and-time-value{text-align:left;min-height:1.5em}
 .measurement-actions button{padding-inline:8px}
 .measurement-history th:first-child,.measurement-history td:first-child{position:sticky;left:0;z-index:1;background:#f6ecee}
 :root[data-theme="dark"] .measurement-history th:first-child,:root[data-theme="dark"] .measurement-history td:first-child{background:#241219}
+.split-switch{margin:12px 0}
+.split-switch button{overflow-wrap:anywhere}
+.split-switch button[aria-pressed="true"]{border-color:var(--ac);background:var(--ac2)}
+#split_date{max-width:18rem}
 </style>
 </head>
 <body>
@@ -368,12 +372,46 @@ function detail(c){
   `<div class="tabs client-tabs" role="group" aria-label="Разделы клиента">${Object.entries(T).map(([k,l])=>`<button class="${tab===k?'on':''}" data-a="tab" data-id="${k}">${l}</button>`).join('')}</div>`+
   (tab==='a'?tabA(c):tab==='m'?tabM(c):tab==='p'?tabP(c):tab==='n'?tabN(c):tabW(c));
 }
+let showSplitOverview=false;
+function splitSwitch(client,partner){
+  return `<div class="row split-switch" aria-label="Карточка сплита">
+    <button data-a="splitOverview" aria-pressed="${showSplitOverview}">Общее</button>
+    ${[client,partner].sort((a,b)=>a.name.localeCompare(b.name,'ru')).map(member=>`<button data-a="splitMember" data-id="${esc(member.id)}" aria-pressed="${!showSplitOverview&&member.id===client.id}">${esc(member.name)}</button>`).join('')}
+  </div>`;
+}
+function splitOverview(client,partner){
+  const history=client.s.flatMap(pass=>Object.keys(pass.sharedSessions||{}).flatMap(date=>{
+    if(linkedSession(pass,date)?.client.id!==partner.id)return [];
+    return [{date,label:pass.v.includes(date)?'Занятие':cancellationLabels[pass.reasons?.[date]]||'Отмена'}];
+  })).sort((a,b)=>b.date.localeCompare(a.date));
+  return `<button class="back" data-a="back">← Клиенты</button>
+    <h2>${esc(client.name)} + ${esc(partner.name)}</h2>
+    ${splitSwitch(client,partner)}
+    <div class="grid">${[client,partner].map(member=>`<div class="card"><strong>${esc(member.name)}</strong><small>${esc(lastInfo(member))}</small></div>`).join('')}</div>
+    <h3>Общее занятие</h3><div class="form"><label for="split_date">Дата занятия</label><input type="date" id="split_date" value="${today()}">
+    <div class="row split-switch"><button class="pri" data-a="splitVisit">Отметить занятие</button>
+    <select id="split_reason" aria-label="Причина отмены"><option value="">Причина отмены</option><option value="force">Форс-мажор</option><option value="absence">Прогул</option></select>
+    <button data-a="splitCancel">Отметить отмену</button></div></div>
+    <h3>Совместные тренировки</h3>${history.length?`<ul>${history.map(item=>`<li>${esc(fmt(item.date))} · ${esc(item.label)}</li>`).join('')}</ul>`:'<p class="mu">Общих отметок пока нет.</p>'}`;
+}
 function render(){
   $('#app').classList.toggle('sel',view==='s'||!!(sel&&clients[sel]));
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.id===view));
-  const l=Object.values(clients).filter(c=>c.name.toLowerCase().includes(q.toLowerCase())).sort((a,b)=>a.name.localeCompare(b.name,'ru'));
-  $('#list').innerHTML=l.map(c=>`<button class="ci${c.id===sel?' on':''}" data-a="open" data-id="${c.id}"><i class="av">${esc(c.name.trim().charAt(0).toUpperCase())}</i><span><b>${esc(c.name)}</b><br><small>${lastInfo(c)}</small></span></button>`).join('')||'<p class="mu">Клиентов не найдено</p>';
-  $('#main').innerHTML=!loaded?'<div class="empty">Загрузка…</div>':view==='s'?dash():clients[sel]?detail(clients[sel]):'<div class="empty">Выберите клиента слева или добавьте нового.'+(col?'':'<br><br><span class="warn">Облачное сохранение недоступно: данные исчезнут при закрытии страницы.</span>')+'</div>';
+  const members=Object.values(clients).sort((a,b)=>a.name.localeCompare(b.name,'ru'));
+  const seen=new Set(),query=q.trim().toLowerCase(),items=[];
+  for(const client of members){
+    if(seen.has(client.id))continue;
+    const partner=splitPartner(client);
+    const group=partner?[client,partner]:[client];
+    group.forEach(member=>seen.add(member.id));
+    const name=group.map(member=>member.name).join(' + ');
+    if(!name.toLowerCase().includes(query))continue;
+    const summary=group.map(member=>`<small>${partner?esc(member.name)+': ':''}${esc(lastInfo(member))}</small>`).join('<br>');
+    items.push(`<button class="ci${group.some(member=>member.id===sel)?' on':''}" data-a="${partner?'openSplit':'open'}" data-id="${esc(client.id)}"><i class="av">${partner?'×2':esc(client.name.trim().charAt(0).toUpperCase())}</i><span><b>${esc(name)}${partner?' · Сплит':''}</b><br>${summary}</span></button>`);
+  }
+  $('#list').innerHTML=items.join('')||'<p class="mu">Клиентов не найдено</p>';
+  const client=clients[sel],partner=client?splitPartner(client):null;
+  $('#main').innerHTML=!loaded?'<div class="empty">Загрузка…</div>':view==='s'?dash():client?(partner?(showSplitOverview?splitOverview(client,partner):splitSwitch(client,partner)+detail(client)):detail(client)):'<div class="empty">Выберите клиента слева или добавьте нового.</div>';
 }
 const fmtR=n=>(+n).toLocaleString('ru-RU')+' ₽';
 const addD=(d,n)=>{const x=new Date(d+'T00:00:00Z');x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)};
@@ -473,10 +511,23 @@ document.addEventListener('click',async e=>{
   if(a==='calculateNutrition'){await runNutrition(c);return}
   if(a==='saveNutritionProfile'){await saveNutritionProfile(c);return}
   if(a==='applyNutrition'){await applyNutrition(c);return}
-  if(a==='open'){sel=id;view='c';tab='a';delc=false;render();scrollTo(0,0)}
+  if(a==='open'||a==='openSplit'||a==='splitMember'){showSplitOverview=a==='openSplit';sel=id;view='c';if(a!=='splitMember')tab='a';delc=false;render();scrollTo(0,0)}
+  else if(a==='splitOverview'){showSplitOverview=true;render();scrollTo(0,0)}
+  else if(a==='splitVisit'||a==='splitCancel'){
+    const partner=c&&splitPartner(c);
+    if(!partner)return toast('Выберите партнёра по сплиту');
+    const date=val('split_date'),status=a==='splitVisit'?'visit':val('split_reason');
+    if(!date)return toast('Выберите дату занятия');
+    if(a==='splitCancel'&&!Object.hasOwn(cancellationLabels,status))return toast('Выберите причину отмены');
+    const existing=c.s.find(pass=>linkedSession(pass,date)?.client.id===partner.id);
+    const eligible=c.s.filter(pass=>pass.d<=date&&date<=st(pass).exp).sort((a,b)=>b.d.localeCompare(a.d));
+    const pass=existing||eligible.find(item=>!linkedSession(item,date)&&(item.v.includes(date)||item.x.includes(date)))||eligible.find(item=>!linkedSession(item,date)&&(status==='force'||st(item).left>0));
+    if(!pass)return toast('Нет подходящего абонемента: '+c.name);
+    changeAttendance(c,pass,date,status);
+  }
   else if(a==='back'){sel=null;view='c';render()}
   else if(a==='tab'){tab=id;render()}
-  else if(a==='addc'){const n=val('nn').trim();if(!n)return;const trainingType=val('new_training_type');if(!Object.hasOwn(trainingTypes,trainingType))return toast('Выберите формат тренировок');const x={id:nid(),name:n,trainingType,g:'',h:'',n:'',ph:'',m:[],p:[],w:[],s:[]};$('#nn').value='';$('#new_training_type').value='';sel=x.id;tab='m';await save(x)}
+  else if(a==='addc'){const n=val('nn').trim();if(!n)return;const trainingType=val('new_training_type');if(!Object.hasOwn(trainingTypes,trainingType))return toast('Выберите формат тренировок');const x={id:nid(),name:n,trainingType,g:'',h:'',n:'',ph:'',m:[],p:[],w:[],s:[]};$('#nn').value='';$('#new_training_type').value='';sel=x.id;showSplitOverview=false;tab='m';await save(x)}
   else if(a==='delc'){if(!delc){delc=true;render();return}delc=false;const i=sel;sel=null;delete clients[i];render();if(col)try{await col.doc(i).delete()}catch(_){toast('Не удалось удалить')}}
   else if(a==='nav'){view=id;if(id==='s')sel=null;render()}
   else if(a==='flt'){flt=id;render()}
