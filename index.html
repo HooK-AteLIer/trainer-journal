@@ -119,6 +119,12 @@ input[type=date]::-webkit-date-and-time-value{text-align:left;min-height:1.5em}
 .measurement-date input,.payment-date input{display:block;width:100%;max-width:18rem;min-inline-size:0;-webkit-appearance:none;appearance:none}
 .measurement-date input::-webkit-date-and-time-value,.payment-date input::-webkit-date-and-time-value{text-align:left}
 @media(max-width:720px){.measurement-date input,.payment-date input{max-width:100%}}
+.measurement-history{display:grid;gap:10px}
+.measurement-entry-head strong{margin-inline-end:auto}
+.measurement-entry button{padding-inline:10px}
+.measurement-readings{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,120px),1fr));gap:8px 14px;margin:12px 0 0}
+.measurement-readings dt{font-size:12px;color:var(--mu)}
+.measurement-readings dd{margin:0;font-weight:700;overflow-wrap:anywhere}
 </style>
 </head>
 <body>
@@ -171,11 +177,18 @@ function tabM(c){
   const editing=measurementEdit?.clientId===c.id?c.m.find(r=>r.id===measurementEdit.id):null;
   const cards=M.map(([k,l])=>{const s=ser(c,k);if(!s.length)return'';const d=s[s.length-1].v-s[0].v;
     return `<div class="card"><small>${l}</small><b>${s[s.length-1].v}</b><small>${s.length>1?'с начала: '+(d>0?'+':'')+d.toFixed(1):'первый замер'}</small></div>`}).join('');
-  const rows=sorted(c).reverse().map(r=>`<tr><td>${fmt(r.d)}</td>${M.map(([k])=>`<td>${esc(r[k]??'')||'—'}</td>`).join('')}<td><button data-a="editm" data-id="${esc(r.id)}">Изменить</button> <button class="dg" data-a="delm" data-id="${esc(r.id)}" aria-label="Удалить замер">✕</button></td></tr>`).join('');
-  return `<div class="form" id="measurement-form"><div class="fg"><div class="measurement-date"><label for="m_d">Дата замера</label><input type="date" id="m_d" value="${esc(editing?.d||today())}"></div>${M.map(([k,l])=>`<div><label for="m_${k}">${l}</label><input type="number" min="0.1" step="0.1" inputmode="decimal" id="m_${k}" value="${esc(editing?.[k]??'')}"></div>`).join('')}</div><div class="row"><button class="pri" data-a="addm">${editing?'Сохранить изменения':'Добавить замер'}</button>${editing?'<button data-a="cancelm">Отменить правку</button>':''}</div></div>`+
+  const rows=sorted(c).reverse().map(row=>{
+    const readings=M.filter(([key])=>row[key]!=null&&row[key]!=='');
+    return `<article class="card measurement-entry"><div class="row measurement-entry-head">
+      <strong>${esc(fmt(row.d))}</strong>
+      <button data-a="editm" data-id="${esc(row.id)}">Изменить</button>
+      <button class="dg" data-a="delm" data-id="${esc(row.id)}" aria-label="Удалить замер">✕</button>
+    </div><dl class="measurement-readings">${readings.map(([key,label])=>`<div><dt>${label}</dt><dd>${esc(row[key])}</dd></div>`).join('')}</dl></article>`;
+  }).join('');
+  return `<div class="form" id="measurement-form">${editing?`<h3 style="margin-top:0">Редактирование замера от ${esc(fmt(editing.d))}</h3>`:''}<div class="fg"><div class="measurement-date"><label for="m_d">Дата замера</label><input type="date" id="m_d" value="${esc(editing?.d||today())}"></div>${M.map(([k,l])=>`<div><label for="m_${k}">${l}</label><input type="number" min="0.1" step="0.1" inputmode="decimal" id="m_${k}" value="${esc(editing?.[k]??'')}"></div>`).join('')}</div><div class="row"><button class="pri" data-a="addm">${editing?'Сохранить изменения':'Добавить замер'}</button>${editing?'<button data-a="cancelm">Отменить правку</button>':''}</div></div>`+
   (cards?`<h3>Текущие значения и изменение</h3><div class="grid">${cards}</div>`:'')+
   `<h3>Динамика</h3><label class="mu" for="metric">Показатель</label> <select id="metric" style="width:auto;max-width:100%">${M.map(([k,l])=>`<option value="${k}"${k===metric?' selected':''}>${l}</option>`).join('')}</select><div class="card" style="margin-top:8px">${chart(c)}</div>`+
-  (rows?`<h3>История замеров</h3><div class="scroll"><table><tr><th>Дата</th>${M.map(([,l])=>`<th>${l}</th>`).join('')}<th></th></tr>${rows}</table></div>`:'');
+  (rows?`<h3>История замеров</h3><div class="measurement-history">${rows}</div>`:'');
 }
 function tabP(c){
   const ps=[...c.p].sort((a,b)=>a.d.localeCompare(b.d));
