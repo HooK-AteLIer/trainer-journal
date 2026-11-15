@@ -128,6 +128,7 @@ input[type=date]::-webkit-date-and-time-value{text-align:left;min-height:1.5em}
 <div class="tabs" id="nav" style="margin:0;width:auto"><button data-a="nav" data-id="c" style="flex:1">Клиенты</button><button data-a="nav" data-id="s" style="flex:1">Абонементы</button></div>
 <input id="q" placeholder="Поиск по имени…" autocomplete="off">
 <div id="list" style="overflow:auto;flex:1"></div>
+<div><label for="new_training_type">Формат тренировок нового клиента</label><select id="new_training_type" required><option value="">Выберите формат</option><option value="individual">Индивидуальные</option><option value="split">Сплит</option></select></div>
 <div class="row"><input id="nn" placeholder="Имя нового клиента" style="flex:1"><button class="pri" data-a="addc">＋</button></div>
 <div class="row"><button data-a="exp" style="flex:1" title="Скачать резервную копию">⬇ Экспорт</button><button data-a="imp" style="flex:1" title="Загрузить резервную копию">⬆ Импорт</button><input type="file" id="impf" accept=".json,application/json" hidden></div>
 </aside>
@@ -314,10 +315,14 @@ document.addEventListener('change',e=>{
  nutritionDrafts[sel]=readNutritionForm();delete nutritionResults[sel];const preview=$('#nutrition-preview');if(preview)preview.innerHTML='<p class="calc-help">Анкета изменена. Нажмите «Рассчитать», чтобы получить новый результат.</p>';
 });
 
+const trainingTypes={individual:'Индивидуальные',split:'Сплит'};
+function trainingTypeSelect(id,value='',required=false){
+  return `<div><label for="${id}">Формат тренировок</label><select id="${id}" ${required?'required':''}><option value="">${required?'Выберите формат':'Не указан'}</option>${Object.entries(trainingTypes).map(([key,label])=>`<option value="${key}" ${key===value?'selected':''}>${label}</option>`).join('')}</select></div>`;
+}
 function detail(c){
   const T={a:'Абонементы',m:'Замеры',p:'Фото',w:'Тренировки',n:'КБЖУ'};
   return `<button class="back" data-a="back">← Клиенты</button><div class="row client-head" style="justify-content:space-between"><div class="row client-title" style="gap:14px"><i class="av big">${esc(c.name.trim().charAt(0).toUpperCase())}</i><h2>${esc(c.name)}</h2></div><button class="${delc?'dg':''}" data-a="delc">${delc?'Точно удалить?':'Удалить клиента'}</button></div>`+
-  `<div class="fg" style="margin-top:10px"><div style="grid-column:span 2"><label class="mu">Цель</label><input id="c_g" value="${esc(c.g)}" placeholder="Похудение, набор массы…"></div><div><label class="mu" for="c_age">Возраст, лет</label><input id="c_age" type="number" min="0" max="120" step="1" inputmode="numeric" value="${esc(c.age??'')}" placeholder="Не указан"></div><div><label class="mu" for="c_h">Рост, см</label><input id="c_h" type="number" min="0" max="300" step="0.1" inputmode="decimal" value="${esc(c.h)}" placeholder="Не указан"></div><div><label class="mu">Телефон</label><input id="c_p" type="tel" value="${esc(c.ph)}"></div></div>`+
+  `<div class="fg" style="margin-top:10px"><div style="grid-column:span 2"><label class="mu">Цель</label><input id="c_g" value="${esc(c.g)}" placeholder="Похудение, набор массы…"></div><div><label class="mu" for="c_age">Возраст, лет</label><input id="c_age" type="number" min="0" max="120" step="1" inputmode="numeric" value="${esc(c.age??'')}" placeholder="Не указан"></div><div><label class="mu" for="c_h">Рост, см</label><input id="c_h" type="number" min="0" max="300" step="0.1" inputmode="decimal" value="${esc(c.h)}" placeholder="Не указан"></div><div><label class="mu">Телефон</label><input id="c_p" type="tel" value="${esc(c.ph)}"></div>${trainingTypeSelect('c_training_type',c.trainingType)}</div>`+
   `<textarea id="c_n" placeholder="Заметки: травмы, ограничения, питание…">${esc(c.n)}</textarea>`+
   `<div class="tabs client-tabs" role="group" aria-label="Разделы клиента">${Object.entries(T).map(([k,l])=>`<button class="${tab===k?'on':''}" data-a="tab" data-id="${k}">${l}</button>`).join('')}</div>`+
   (tab==='a'?tabA(c):tab==='m'?tabM(c):tab==='p'?tabP(c):tab==='n'?tabN(c):tabW(c));
@@ -355,7 +360,8 @@ function syncSingleVisitField(){
   const field=$('#np_visit_field');
   if(field)field.hidden=Number(val('np_pk'))!==1;
 }
-const passForm=c=>`<div class="fg">${c?'':`<div style="grid-column:span 2"><label>Клиент (имя)</label><input id="np_n" list="nl" placeholder="Начните вводить имя" autocomplete="off"></div><div><label>Телефон (для нового)</label><input id="np_ph" type="tel"></div>`}<div><label>Пакет</label><select id="np_pr"><option value="">—</option>${cfg.pl.map((x,i)=>`<option value="${i}">${esc(x.n)} · ${x.c}</option>`).join('')}</select></div><div><label>Занятий</label><input id="np_pk" type="number" inputmode="numeric"></div><div><label>Стоимость, ₽</label><input id="np_c" type="number" inputmode="numeric"></div><div class="payment-date"><label for="np_d">Дата оплаты</label><input id="np_d" type="date" value="${today()}"></div><div class="payment-date" id="np_visit_field" hidden><label for="np_visit">Дата посещения разовой тренировки</label><input id="np_visit" type="date"><small>Заполните, если тренировка уже прошла.</small></div><div style="grid-column:span 2"><label>Заметка</label><input id="np_t" placeholder="бартер, остаток…"></div></div><button class="pri" data-a="newpass" data-c="${c?c.id:''}">Оформить абонемент</button>`;
+const findClientByName=name=>Object.values(clients).find(client=>client.name.trim().toLowerCase()===name.trim().toLowerCase());
+const passForm=c=>`<div class="fg">${c?'':`<div style="grid-column:span 2"><label>Клиент (имя)</label><input id="np_n" list="nl" placeholder="Начните вводить имя" autocomplete="off"></div><div><label>Телефон (для нового)</label><input id="np_ph" type="tel"></div><div id="np_training_field" hidden>${trainingTypeSelect('np_training_type','',true)}</div>`}<div><label>Пакет</label><select id="np_pr"><option value="">—</option>${cfg.pl.map((x,i)=>`<option value="${i}">${esc(x.n)} · ${x.c}</option>`).join('')}</select></div><div><label>Занятий</label><input id="np_pk" type="number" inputmode="numeric"></div><div><label>Стоимость, ₽</label><input id="np_c" type="number" inputmode="numeric"></div><div class="payment-date"><label for="np_d">Дата оплаты</label><input id="np_d" type="date" value="${today()}"></div><div class="payment-date" id="np_visit_field" hidden><label for="np_visit">Дата посещения разовой тренировки</label><input id="np_visit" type="date"><small>Заполните, если тренировка уже прошла.</small></div><div style="grid-column:span 2"><label>Заметка</label><input id="np_t" placeholder="бартер, остаток…"></div></div><button class="pri" data-a="newpass" data-c="${c?c.id:''}">Оформить абонемент</button>`;
 const tabA=c=>(c.s.length?[...c.s].sort((a,b)=>b.d.localeCompare(a.d)).map(s=>pc(c,s,1)).join(''):'<p class="mu">Абонементов пока нет.</p>')+'<h3>Новый абонемент</h3><div class="form">'+passForm(c)+'</div>';
 function dash(){
  const all=[];Object.values(clients).forEach(c=>c.s.forEach(s=>all.push({c,s,i:st(s)})));
@@ -385,7 +391,7 @@ document.addEventListener('click',async e=>{
   if(a==='open'){sel=id;view='c';tab='a';delc=false;render();scrollTo(0,0)}
   else if(a==='back'){sel=null;view='c';render()}
   else if(a==='tab'){tab=id;render()}
-  else if(a==='addc'){const n=val('nn').trim();if(!n)return;const x={id:nid(),name:n,g:'',h:'',n:'',ph:'',m:[],p:[],w:[],s:[]};$('#nn').value='';sel=x.id;tab='m';await save(x)}
+  else if(a==='addc'){const n=val('nn').trim();if(!n)return;const trainingType=val('new_training_type');if(!Object.hasOwn(trainingTypes,trainingType))return toast('Выберите формат тренировок');const x={id:nid(),name:n,trainingType,g:'',h:'',n:'',ph:'',m:[],p:[],w:[],s:[]};$('#nn').value='';$('#new_training_type').value='';sel=x.id;tab='m';await save(x)}
   else if(a==='delc'){if(!delc){delc=true;render();return}delc=false;const i=sel;sel=null;delete clients[i];render();if(col)try{await col.doc(i).delete()}catch(_){toast('Не удалось удалить')}}
   else if(a==='nav'){view=id;if(id==='s')sel=null;render()}
   else if(a==='flt'){flt=id;render()}
@@ -400,7 +406,13 @@ document.addEventListener('click',async e=>{
   else if(a==='delv'){const p=P(t.dataset.c,id),k=t.dataset.k;p[k]=p[k].filter(x=>x!==t.dataset.dt);if(k==='x'&&p.reasons)delete p.reasons[t.dataset.dt];await save(clients[t.dataset.c])}
   else if(a==='delpass'){if(delp!==id){delp=id;render();return}delp='';const cl=clients[t.dataset.c];cl.s=cl.s.filter(x=>x.id!==id);await save(cl)}
   else if(a==='newpass'){let cl=clients[t.dataset.c];
-    if(!cl){const n=val('np_n').trim();if(!n)return toast('Введите имя клиента');cl=Object.values(clients).find(x=>x.name.trim().toLowerCase()===n.toLowerCase())||{id:nid(),name:n,g:'',h:'',n:'',ph:val('np_ph'),m:[],p:[],w:[],s:[]}}
+    if(!cl){const n=val('np_n').trim();if(!n)return toast('Введите имя клиента');cl=findClientByName(n);
+      if(!cl){
+        const trainingType=val('np_training_type');
+        if(!Object.hasOwn(trainingTypes,trainingType))return toast('Выберите формат тренировок нового клиента');
+        cl={id:nid(),name:n,trainingType,g:'',h:'',n:'',ph:val('np_ph'),m:[],p:[],w:[],s:[]};
+      }
+    }
     const pk=+val('np_pk');if(!pk)return toast('Укажите число занятий');const pi=val('np_pr'),pr=pi===''?null:cfg.pl[+pi];
     const visitDate=pk===1?val('np_visit'):'';
     if(visitDate&&visitDate>today())return toast('Дата посещения ещё не наступила');
@@ -460,9 +472,10 @@ document.addEventListener('change',async e=>{
     }catch(_){e.target.disabled=false;e.target.value='';toast('Не удалось прикрепить PDF');}
   }
   else if(c&&i.startsWith('nutrition_')){const key=i.slice(10);if(!['calories','protein','fat','carbs','notes'].includes(key))return;if(key!=='notes'&&!e.target.validity.valid)return toast('Введите число не меньше нуля');c.nutrition={...(c.nutrition||{}),[key]:e.target.value,origin:'manual',updatedAt:new Date().toISOString()};const status=$('#nutrition-origin');if(status)status.textContent='Цели изменены вручную';if(col)await col.doc(c.id).set(c);toast('КБЖУ сохранено')}
-  else if(c&&(i==='c_g'||i==='c_h'||i==='c_age'||i==='c_n'||i==='c_p')){if(!e.target.validity.valid)return toast('Проверьте значение');c[{c_g:'g',c_h:'h',c_age:'age',c_n:'n',c_p:'ph'}[i]]=e.target.value;clients[c.id]=c;if(col)try{await col.doc(c.id).set(c)}catch(_){toast('Не удалось сохранить')}}
+  else if(c&&(i==='c_g'||i==='c_h'||i==='c_age'||i==='c_n'||i==='c_p'||i==='c_training_type')){if(!e.target.validity.valid)return toast('Проверьте значение');c[{c_g:'g',c_h:'h',c_age:'age',c_n:'n',c_p:'ph',c_training_type:'trainingType'}[i]]=e.target.value;clients[c.id]=c;if(col)try{await col.doc(c.id).set(c)}catch(_){toast('Не удалось сохранить')}}
 });
-document.addEventListener('input',e=>{if(e.target.id==='np_pk')syncSingleVisitField()});
+document.addEventListener('input',e=>{if(e.target.id==='np_pk')syncSingleVisitField();
+  if(e.target.id==='np_n')$('#np_training_field').hidden=!e.target.value.trim()||!!findClientByName(e.target.value)});
 $('#q').addEventListener('input',e=>{q=e.target.value;render()});
 /* ---------- Локальное хранилище: localStorage (данные) + IndexedDB (фото) ---------- */
 const LS='trainer-journal-v1',PURL={};
